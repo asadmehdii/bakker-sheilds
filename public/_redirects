@@ -1,0 +1,2 @@
+/webhook-checkin/:userId/:webhookToken  /.netlify/functions/webhook-proxy  200
+/*    /index.html   200
