@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Edit, MessageSquare, Calendar, TrendingUp, TrendingDown, Clock, Mail, Phone, MapPin, Target, FileText, Trash2, Archive, Reply, CheckCircle, Minus } from 'lucide-react';
-import { clientService, checkinService, type Client, type Checkin } from '../lib/supabase';
+import { clientService, checkinService, supabase, type Client, type Checkin } from '../lib/supabase';
 
 function ClientProfile() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -14,6 +14,29 @@ function ClientProfile() {
   useEffect(() => {
     if (clientId) {
       loadClientData();
+      
+      // Set up real-time subscriptions for this specific client
+      const clientChannel = supabase
+        .channel(`client-${clientId}`)
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'clients', filter: `id=eq.${clientId}` }, 
+          (payload) => {
+            console.log('Client profile change detected:', payload);
+            loadClientData();
+          }
+        )
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'checkins', filter: `client_id=eq.${clientId}` }, 
+          (payload) => {
+            console.log('Client checkin change detected:', payload);
+            loadClientData();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(clientChannel);
+      };
     }
   }, [clientId]);
 

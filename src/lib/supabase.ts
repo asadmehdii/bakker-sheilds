@@ -940,6 +940,243 @@ export const clientService = {
   },
 };
 
+// Batch processing functions for efficiency
+export const batchService = {
+  // Process multiple checkins for AI analysis in batch
+  async batchProcessCheckins(checkinIds: string[]): Promise<{ success: string[], failed: string[] }> {
+    const results = { success: [] as string[], failed: [] as string[] };
+    
+    // Process in batches of 5 to avoid overwhelming the AI service
+    const batchSize = 5;
+    for (let i = 0; i < checkinIds.length; i += batchSize) {
+      const batch = checkinIds.slice(i, i + batchSize);
+      
+      // Process batch concurrently
+      const promises = batch.map(async (checkinId) => {
+        try {
+          // Get checkin data
+          const checkin = await checkinService.getCheckinById(checkinId);
+          if (!checkin || !checkin.transcript) {
+            return { id: checkinId, success: false };
+          }
+
+          // Call AI analysis function with client context
+          const { data, error } = await supabase.functions.invoke('openai-checkin-analysis', {
+            body: {
+              checkinId: checkin.id,
+              clientId: checkin.client_id,
+              transcript: checkin.transcript,
+              clientName: checkin.client_name,
+              tags: checkin.tags || [],
+              previousAnalysis: checkin.ai_analysis
+            }
+          });
+
+          if (error) {
+            console.error('Error in AI analysis for checkin', checkinId, ':', error);
+            return { id: checkinId, success: false };
+          }
+
+          // Update the checkin with AI analysis
+          await checkinService.updateCheckinAIAnalysis(checkinId, data.analysis);
+          return { id: checkinId, success: true };
+        } catch (error) {
+          console.error('Error processing checkin', checkinId, ':', error);
+          return { id: checkinId, success: false };
+        }
+      });
+
+      const batchResults = await Promise.all(promises);
+      batchResults.forEach(result => {
+        if (result.success) {
+          results.success.push(result.id);
+        } else {
+          results.failed.push(result.id);
+        }
+      });
+
+      // Add small delay between batches to be respectful to the AI service
+      if (i + batchSize < checkinIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    return results;
+  },
+
+  // Get all pending checkins that need AI analysis
+  async getPendingAnalysisCheckins(): Promise<string[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) return [];
+
+    const { data, error } = await supabase
+      .from('checkins')
+      .select('id')
+      .eq('coach_id', effectiveCoachId)
+      .is('ai_analysis', null)
+      .not('transcript', 'is', null)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching pending analysis checkins:', error);
+      return [];
+    }
+
+    return data.map(checkin => checkin.id);
+  },
+
+  // Auto-process pending checkins in background
+  async autoProcessPendingCheckins(): Promise<void> {
+    const pendingIds = await this.getPendingAnalysisCheckins();
+    
+    if (pendingIds.length > 0) {
+      console.log(`Auto-processing ${pendingIds.length} pending checkins`);
+      const results = await this.batchProcessCheckins(pendingIds);
+      console.log(`Batch processing complete: ${results.success.length} success, ${results.failed.length} failed`);
+      
+      // Log the batch processing results
+      await logService.logFeatureUsage('batch_ai_processing', {
+        total_processed: pendingIds.length,
+        successful: results.success.length,
+        failed: results.failed.length
+      });
+    }
+  }
+};
+
+// AI response templates service
+export const responseTemplatesService = {
+  // Generate response templates based on checkin analysis
+  async generateResponseTemplates(checkinId: string): Promise<{
+    encouragement: string;
+    guidance: string;
+    question: string;
+    adjustment: string;
+  } | null> {
+    try {
+      const checkin = await checkinService.getCheckinById(checkinId);
+      if (!checkin || !checkin.ai_analysis) {
+        return null;
+      }
+
+      // Call AI function to generate response templates
+      const { data, error } = await supabase.functions.invoke('openai-checkin-chat', {
+        body: {
+          messages: [{
+            role: 'system',
+            content: `You are a professional coach helping to generate response templates. Based on the check-in analysis provided, generate 4 different response templates:
+
+1. ENCOURAGEMENT: A positive, supportive message acknowledging progress
+2. GUIDANCE: Specific advice or next steps  
+3. QUESTION: A thoughtful question to encourage reflection
+4. ADJUSTMENT: A suggestion for modifying their approach
+
+Each template should be 2-3 sentences, professional but warm, and personalized to the client's specific situation.
+
+Return your response as a JSON object with keys: encouragement, guidance, question, adjustment`
+          }, {
+            role: 'user',
+            content: `Client: ${checkin.client_name}
+            
+Check-in Analysis:
+${checkin.ai_analysis}
+
+Current Check-in:
+${checkin.transcript?.substring(0, 500)}...`
+          }],
+          clientName: checkin.client_name,
+          checkinId: checkin.id
+        }
+      });
+
+      if (error) {
+        console.error('Error generating response templates:', error);
+        return null;
+      }
+
+      // Try to parse the AI response as JSON
+      try {
+        const templates = JSON.parse(data.response);
+        return templates;
+      } catch (parseError) {
+        console.error('Error parsing response templates:', parseError);
+        // Fallback: create templates from the raw response
+        return {
+          encouragement: "Great work on staying consistent with your check-ins! I can see you're making thoughtful observations about your progress.",
+          guidance: "Based on your recent updates, I recommend focusing on the areas you've identified as needing attention.",
+          question: "What do you think has been the biggest factor in your recent progress or challenges?",
+          adjustment: "Consider adjusting your approach slightly based on the patterns we're seeing in your check-ins."
+        };
+      }
+    } catch (error) {
+      console.error('Error in generateResponseTemplates:', error);
+      return null;
+    }
+  },
+
+  // Get common response templates for quick use
+  getQuickResponseTemplates(): Array<{
+    id: string;
+    title: string;
+    content: string;
+    category: 'encouragement' | 'guidance' | 'adjustment' | 'question';
+  }> {
+    return [
+      {
+        id: 'progress',
+        title: 'Great Progress',
+        content: "I'm really impressed with the progress you're making! Keep up the excellent work and stay consistent with what's working for you.",
+        category: 'encouragement'
+      },
+      {
+        id: 'stay-course',
+        title: 'Stay the Course', 
+        content: "You're on the right track! Continue with your current approach and let's check in again soon to see how things develop.",
+        category: 'guidance'
+      },
+      {
+        id: 'reflect',
+        title: 'Reflection Question',
+        content: "What do you think has been the most challenging part of this process for you? Understanding this can help us adjust our approach.",
+        category: 'question'
+      },
+      {
+        id: 'small-adjustment',
+        title: 'Small Adjustment',
+        content: "Based on your recent check-ins, let's make a small adjustment to your approach. This should help address the challenges you've mentioned.",
+        category: 'adjustment'
+      },
+      {
+        id: 'celebrate-wins',
+        title: 'Celebrate Wins',
+        content: "Don't forget to celebrate these wins, no matter how small they might seem! Each step forward is meaningful progress.",
+        category: 'encouragement'
+      },
+      {
+        id: 'overcome-obstacles',
+        title: 'Overcome Obstacles',
+        content: "It sounds like you've hit a challenging period. Let's work together to identify strategies that can help you push through this.",
+        category: 'guidance'
+      },
+      {
+        id: 'patterns',
+        title: 'Notice Patterns',
+        content: "I'm noticing some interesting patterns in your check-ins. What patterns are you seeing on your end?",
+        category: 'question'
+      },
+      {
+        id: 'modify-approach',
+        title: 'Modify Approach',
+        content: "Based on your feedback, I think we should modify our approach slightly. This adjustment should better align with your current situation.",
+        category: 'adjustment'
+      }
+    ];
+  }
+};
+
 // Team member functions
 export const teamService = {
   // Get the coach ID for the current user (returns user ID if they are a coach, or their coach's ID if they are a team member)

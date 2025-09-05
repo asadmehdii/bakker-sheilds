@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Plus, Search, TrendingUp, TrendingDown, Minus, Calendar, MessageSquare, Clock, Filter } from 'lucide-react';
-import { clientService, type Client } from '../lib/supabase';
+import { clientService, supabase, type Client } from '../lib/supabase';
 
 function ClientsDashboard() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -13,6 +13,31 @@ function ClientsDashboard() {
 
   useEffect(() => {
     loadClients();
+    
+    // Set up real-time subscriptions
+    const clientsChannel = supabase
+      .channel('clients-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'clients' }, 
+        (payload) => {
+          console.log('Client change detected:', payload);
+          // Reload clients when any client changes
+          loadClients();
+        }
+      )
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'checkins' }, 
+        (payload) => {
+          console.log('Checkin change detected:', payload);
+          // Reload clients when checkins change (affects client stats)
+          loadClients();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(clientsChannel);
+    };
   }, []);
 
   useEffect(() => {

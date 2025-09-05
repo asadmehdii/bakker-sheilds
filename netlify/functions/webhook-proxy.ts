@@ -1,5 +1,35 @@
 import { Handler } from '@netlify/functions';
 
+// Retry configuration
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY = 1000; // 1 second
+const BACKOFF_MULTIPLIER = 2;
+
+// Utility function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Enhanced error handling with retry logic
+async function withRetry<T>(
+  operation: () => Promise<T>, 
+  attemptNumber: number = 1
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error(`Attempt ${attemptNumber} failed:`, error);
+    
+    if (attemptNumber >= RETRY_ATTEMPTS) {
+      throw error;
+    }
+    
+    const delayMs = RETRY_DELAY * Math.pow(BACKOFF_MULTIPLIER, attemptNumber - 1);
+    console.log(`Retrying in ${delayMs}ms (attempt ${attemptNumber + 1}/${RETRY_ATTEMPTS})`);
+    
+    await delay(delayMs);
+    return withRetry(operation, attemptNumber + 1);
+  }
+}
+
 export const handler: Handler = async (event, context) => {
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
@@ -89,25 +119,40 @@ export const handler: Handler = async (event, context) => {
       };
     }
 
-    // Forward the request to the Supabase Edge Function
+    // Forward the request to the Supabase Edge Function with retry logic
     const supabaseWebhookUrl = `${supabaseUrl}/functions/v1/webhook-checkin/${userId}/${webhookToken}`;
     
     console.log('Forwarding webhook to:', supabaseWebhookUrl);
     
-    const response = await fetch(supabaseWebhookUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Content-Type': 'application/json',
-        // Forward any additional headers that might be important
-        ...(event.headers['x-webhook-signature'] && {
-          'x-webhook-signature': event.headers['x-webhook-signature']
-        }),
-      },
-      body: event.body,
-    });
+    const { response, responseData } = await withRetry(async () => {
+      const response = await fetch(supabaseWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+          // Forward any additional headers that might be important
+          ...(event.headers['x-webhook-signature'] && {
+            'x-webhook-signature': event.headers['x-webhook-signature']
+          }),
+        },
+        body: event.body,
+      });
 
-    const responseData = await response.text();
+      // Check if response indicates a retryable error
+      if (response.status >= 500 || response.status === 429) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      // For non-retryable errors (4xx), don't retry but still capture the response
+      const responseData = await response.text();
+      
+      // Only throw for actual server errors that should be retried
+      if (response.status >= 500) {
+        throw new Error(`Server error: ${response.status} - ${responseData}`);
+      }
+      
+      return { response, responseData };
+    });
     
     return {
       statusCode: response.status,

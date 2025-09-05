@@ -27,9 +27,11 @@ const corsHeaders = {
 
 interface AnalysisRequest {
   checkinId: string;
+  clientId?: string;
   clientName: string;
   transcript: string;
   tags: string[];
+  previousAnalysis?: string;
 }
 
 interface AnalysisResponse {
@@ -44,7 +46,7 @@ serve(async (req) => {
   }
 
   try {
-    const { checkinId, clientName, transcript, tags }: AnalysisRequest = await req.json()
+    const { checkinId, clientId, clientName, transcript, tags, previousAnalysis }: AnalysisRequest = await req.json()
 
     if (!checkinId || !clientName || !transcript) {
       return new Response(
