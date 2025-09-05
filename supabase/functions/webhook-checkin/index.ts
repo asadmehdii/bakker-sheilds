@@ -286,12 +286,154 @@ serve(async (req) => {
     const suggestedTags = generateTags(derivedTranscript)
     console.log('🏷️ [Webhook] Generated tags:', suggestedTags)
 
-    // Insert check-in into database
+    // Utility function to normalize phone numbers for matching
+    const normalizePhone = (phone: string | null): string | null => {
+      if (!phone) return null;
+      // Remove all non-digit characters except + (for country codes)
+      return phone.replace(/[^\d+]/g, '').replace(/^\+?1?/, '') // Remove US country code
+    }
+
+    // Find or create client using configurable matching strategy
+    const findOrCreateClient = async () => {
+      // First, get the coach's webhook settings for client matching preferences
+      const { data: webhookSettings, error: settingsError } = await supabase
+        .from('user_checkin_webhook_settings')
+        .select('primary_identifier, fallback_identifier, auto_create_clients, new_client_status, new_client_engagement')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .single()
+
+      if (settingsError) {
+        console.error('❌ [Webhook] Failed to get webhook settings:', settingsError)
+        // Use defaults if settings can't be retrieved
+        var primary_identifier = 'phone'
+        var fallback_identifier = 'email'
+        var auto_create_clients = true
+        var new_client_status = 'active'
+        var new_client_engagement = 'medium'
+      } else {
+        var { primary_identifier, fallback_identifier, auto_create_clients, new_client_status, new_client_engagement } = webhookSettings
+      }
+
+      console.log('🔍 [Webhook] Using matching strategy:', { primary_identifier, fallback_identifier, auto_create_clients })
+
+      // Normalize phone for reliable matching
+      const normalizedPhone = normalizePhone(phone)
+      const normalizedEmail = email?.toLowerCase().trim()
+
+      // Helper function to find client by phone
+      const findByPhone = async (phoneNumber: string) => {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('id, full_name, phone')
+          .eq('coach_id', userId)
+          .eq('phone', phoneNumber)
+          .single()
+        return client
+      }
+
+      // Helper function to find client by email
+      const findByEmail = async (emailAddress: string) => {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('id, full_name, email')
+          .eq('coach_id', userId)
+          .eq('email', emailAddress)
+          .single()
+        return client
+      }
+
+      // Try primary identifier first
+      let matchedClient = null
+      if (primary_identifier === 'phone' && normalizedPhone) {
+        matchedClient = await findByPhone(normalizedPhone)
+        if (matchedClient) {
+          console.log('✅ [Webhook] Found client by phone (primary):', matchedClient.full_name)
+          return matchedClient.id
+        }
+      } else if (primary_identifier === 'email' && normalizedEmail) {
+        matchedClient = await findByEmail(normalizedEmail)
+        if (matchedClient) {
+          console.log('✅ [Webhook] Found client by email (primary):', matchedClient.full_name)
+          return matchedClient.id
+        }
+      }
+
+      // Try fallback identifier if primary didn't match
+      if (fallback_identifier && fallback_identifier !== 'none' && fallback_identifier !== primary_identifier) {
+        if (fallback_identifier === 'phone' && normalizedPhone) {
+          matchedClient = await findByPhone(normalizedPhone)
+          if (matchedClient) {
+            console.log('✅ [Webhook] Found client by phone (fallback):', matchedClient.full_name)
+            return matchedClient.id
+          }
+        } else if (fallback_identifier === 'email' && normalizedEmail) {
+          matchedClient = await findByEmail(normalizedEmail)
+          if (matchedClient) {
+            console.log('✅ [Webhook] Found client by email (fallback):', matchedClient.full_name)
+            return matchedClient.id
+          }
+        }
+      }
+
+      // No existing client found - check if we should auto-create
+      if (!auto_create_clients) {
+        throw new Error(`No existing client found and auto-creation is disabled. Phone: ${normalizedPhone}, Email: ${normalizedEmail}`)
+      }
+
+      // Verify we have at least one identifier to create a client
+      if (!normalizedPhone && !normalizedEmail) {
+        throw new Error('Cannot create client without phone number or email address')
+      }
+
+      // Create new client
+      console.log('🆕 [Webhook] Creating new client:', clientName)
+      const { data: newClient, error: clientError } = await supabase
+        .from('clients')
+        .insert({
+          coach_id: userId,
+          full_name: clientName,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          status: new_client_status,
+          engagement_level: new_client_engagement,
+          custom_fields: clientId ? { external_id: clientId } : {},
+          tags: ['webhook-created'],
+          onboarded_at: new Date().toISOString()
+        })
+        .select('id')
+        .single()
+
+      if (clientError) {
+        console.error('❌ [Webhook] Error creating client:', clientError)
+        throw new Error(`Failed to create client: ${clientError.message}`)
+      }
+
+      console.log('✅ [Webhook] Created new client with ID:', newClient.id)
+      return newClient.id
+    }
+
+    // Get the definitive client ID using smart matching
+    let definitiveClientId: string
+    try {
+      definitiveClientId = await findOrCreateClient()
+    } catch (error) {
+      console.error('❌ [Webhook] Failed to find/create client:', error)
+      return new Response(
+        JSON.stringify({ error: 'Failed to process client information', details: error.message }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
+    // Insert check-in into database with definitive client ID
     const { data: checkin, error: insertError } = await supabase
       .from('checkins')
       .insert({
         coach_id: userId,
-        client_id: clientId,
+        client_id: definitiveClientId, // Now guaranteed to be a valid client ID
         client_name: clientName,
         transcript: derivedTranscript,
         embedding: embedding,

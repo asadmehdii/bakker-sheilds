@@ -19,6 +19,13 @@ const CheckinWebhookSettingsModal: React.FC<CheckinWebhookSettingsModalProps> = 
   const [connectionInfo, setConnectionInfo] = useState<{
     connectedAt?: string;
   }>({});
+  
+  // Client matching settings
+  const [primaryIdentifier, setPrimaryIdentifier] = useState<'phone' | 'email'>('phone');
+  const [fallbackIdentifier, setFallbackIdentifier] = useState<'phone' | 'email' | 'none'>('email');
+  const [autoCreateClients, setAutoCreateClients] = useState(true);
+  const [newClientStatus, setNewClientStatus] = useState<'active' | 'inactive' | 'paused'>('active');
+  const [newClientEngagement, setNewClientEngagement] = useState<'low' | 'medium' | 'high'>('medium');
 
   // Generate webhook URL with user ID and token
   const webhookUrl = currentUserId && webhookToken 
@@ -54,6 +61,14 @@ const CheckinWebhookSettingsModal: React.FC<CheckinWebhookSettingsModalProps> = 
         setConnectionInfo({
           connectedAt: settings.created_at
         });
+        
+        // Load client matching settings
+        setPrimaryIdentifier(settings.primary_identifier || 'phone');
+        setFallbackIdentifier(settings.fallback_identifier || 'email');
+        setAutoCreateClients(settings.auto_create_clients !== false);
+        setNewClientStatus(settings.new_client_status || 'active');
+        setNewClientEngagement(settings.new_client_engagement || 'medium');
+        
         console.log('✅ [Webhook Modal] Webhook is connected with token:', settings.webhook_secret);
       } else {
         setIsConnected(false);
@@ -82,7 +97,12 @@ const CheckinWebhookSettingsModal: React.FC<CheckinWebhookSettingsModalProps> = 
 
     try {
       const success = await checkinWebhookService.updateCheckinWebhookSettings({
-        webhook_secret: webhookToken.trim()
+        webhook_secret: webhookToken.trim(),
+        primary_identifier: primaryIdentifier,
+        fallback_identifier: fallbackIdentifier,
+        auto_create_clients: autoCreateClients,
+        new_client_status: newClientStatus,
+        new_client_engagement: newClientEngagement
       });
 
       if (success) {
@@ -328,6 +348,113 @@ const CheckinWebhookSettingsModal: React.FC<CheckinWebhookSettingsModalProps> = 
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     <span>Regenerate URL</span>
                   </button>
+                </div>
+              )}
+
+              {/* Client Matching Settings */}
+              {webhookToken && canEdit && (
+                <div className="border border-slate-200 rounded-lg p-4">
+                  <h4 className="font-medium text-slate-700 mb-4">Client Matching Configuration</h4>
+                  
+                  <div className="space-y-4">
+                    {/* Primary Identifier */}
+                    <div>
+                      <label htmlFor="primary-identifier" className="block text-sm font-medium text-slate-600 mb-2">
+                        Primary identifier for matching clients
+                      </label>
+                      <select
+                        id="primary-identifier"
+                        value={primaryIdentifier}
+                        onChange={(e) => setPrimaryIdentifier(e.target.value as 'phone' | 'email')}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="phone">Phone Number</option>
+                        <option value="email">Email Address</option>
+                      </select>
+                      <p className="text-xs text-slate-500 mt-1">
+                        CheckinAI will first try to match clients using this identifier
+                      </p>
+                    </div>
+
+                    {/* Fallback Identifier */}
+                    <div>
+                      <label htmlFor="fallback-identifier" className="block text-sm font-medium text-slate-600 mb-2">
+                        Fallback identifier
+                      </label>
+                      <select
+                        id="fallback-identifier"
+                        value={fallbackIdentifier}
+                        onChange={(e) => setFallbackIdentifier(e.target.value as 'phone' | 'email' | 'none')}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="none">None</option>
+                        <option value="phone" disabled={primaryIdentifier === 'phone'}>Phone Number</option>
+                        <option value="email" disabled={primaryIdentifier === 'email'}>Email Address</option>
+                      </select>
+                      <p className="text-xs text-slate-500 mt-1">
+                        If primary identifier fails, try this method
+                      </p>
+                    </div>
+
+                    {/* Auto-create Clients */}
+                    <div>
+                      <label className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={autoCreateClients}
+                          onChange={(e) => setAutoCreateClients(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-600">
+                          Automatically create new clients
+                        </span>
+                      </label>
+                      <p className="text-xs text-slate-500 mt-1 ml-7">
+                        When enabled, unknown clients will be created automatically. When disabled, check-ins from unknown clients will be rejected.
+                      </p>
+                    </div>
+
+                    {/* New Client Defaults (only show if auto-create is enabled) */}
+                    {autoCreateClients && (
+                      <div className="bg-slate-50 rounded-lg p-3 space-y-3">
+                        <h5 className="text-sm font-medium text-slate-700">New client defaults:</h5>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label htmlFor="new-client-status" className="block text-xs font-medium text-slate-600 mb-1">
+                              Status
+                            </label>
+                            <select
+                              id="new-client-status"
+                              value={newClientStatus}
+                              onChange={(e) => setNewClientStatus(e.target.value as 'active' | 'inactive' | 'paused')}
+                              className="w-full px-2 py-1 text-sm border border-slate-300 rounded bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="active">Active</option>
+                              <option value="inactive">Inactive</option>
+                              <option value="paused">Paused</option>
+                            </select>
+                          </div>
+                          
+                          <div>
+                            <label htmlFor="new-client-engagement" className="block text-xs font-medium text-slate-600 mb-1">
+                              Engagement Level
+                            </label>
+                            <select
+                              id="new-client-engagement"
+                              value={newClientEngagement}
+                              onChange={(e) => setNewClientEngagement(e.target.value as 'low' | 'medium' | 'high')}
+                              className="w-full px-2 py-1 text-sm border border-slate-300 rounded bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

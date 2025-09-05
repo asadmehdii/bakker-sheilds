@@ -357,6 +357,11 @@ export const checkinWebhookService = {
   // Update or create user's checkin webhook settings
   async updateCheckinWebhookSettings(settings: { 
     webhook_secret: string;
+    primary_identifier?: 'phone' | 'email';
+    fallback_identifier?: 'phone' | 'email' | 'none';
+    auto_create_clients?: boolean;
+    new_client_status?: 'active' | 'inactive' | 'paused';
+    new_client_engagement?: 'low' | 'medium' | 'high';
   }): Promise<boolean> {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -378,6 +383,11 @@ export const checkinWebhookService = {
       .upsert({
         user_id: effectiveCoachId,
         webhook_secret: settings.webhook_secret,
+        primary_identifier: settings.primary_identifier || 'phone',
+        fallback_identifier: settings.fallback_identifier || 'email',
+        auto_create_clients: settings.auto_create_clients !== false,
+        new_client_status: settings.new_client_status || 'active',
+        new_client_engagement: settings.new_client_engagement || 'medium',
         is_active: true
       });
 
