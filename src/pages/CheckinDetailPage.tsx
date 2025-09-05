@@ -4,9 +4,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { chatService, checkinService, type ChatSession as DBChatSession, type Message as DBMessage, type Checkin } from '../lib/supabase';
 import UserMenu from '../components/UserMenu';
-import AIDropdown from '../components/AIDropdown';
 import CoachResponseModal from '../components/CoachResponseModal';
-import { aiTools } from '../config/aiTools';
 
 interface Message {
   id: string;
@@ -22,7 +20,6 @@ interface QuickResponseTemplate {
   category: 'encouragement' | 'guidance' | 'adjustment' | 'question';
 }
 
-const AI_TYPE = 'checkin-ai';
 
 const quickResponseTemplates: QuickResponseTemplate[] = [
   {
@@ -87,8 +84,6 @@ function CheckinDetailPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Find current AI tool
-  const currentAI = aiTools.find(tool => tool.id === AI_TYPE)!;
 
   useEffect(() => {
     if (checkinId) {
@@ -166,7 +161,7 @@ function CheckinDetailPage() {
   const loadChatSession = async (checkinData: Checkin) => {
     try {
       // Check if there's already a chat session for this checkin
-      const sessions = await chatService.getChatSessions(AI_TYPE);
+      const sessions = await chatService.getChatSessions('checkin-ai');
       const existingSession = sessions.find(session => session.checkin_id === checkinData.id);
       
       if (existingSession) {
@@ -529,7 +524,18 @@ function CheckinDetailPage() {
                 alt="ARFunnel" 
                 className="h-8 w-auto hidden dark:block"
               />
-              <AIDropdown currentAI={currentAI} allAITools={aiTools} />
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                  <MessageCircle className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-slate-800 dark:text-white">CheckinAI</h2>
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                    <span className="text-xs text-slate-500">Online</span>
+                  </div>
+                </div>
+              </div>
             </div>
             <UserMenu />
           </div>

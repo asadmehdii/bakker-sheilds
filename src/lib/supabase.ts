@@ -48,10 +48,32 @@ export interface UserProfile {
   app_role: 'user' | 'coach' | 'admin' | 'super_admin';
 }
 
+export interface Client {
+  id: string;
+  coach_id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  age: number | null;
+  gender: string | null;
+  location: string | null;
+  goals: string | null;
+  notes: string | null;
+  status: 'active' | 'inactive' | 'paused';
+  engagement_level: 'low' | 'medium' | 'high';
+  onboarded_at: string | null;
+  last_checkin_at: string | null;
+  total_checkins: number;
+  tags: string[];
+  custom_fields: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Checkin {
   id: string;
   coach_id: string;
-  client_id: string | null;
+  client_id: string;
   client_name: string;
   date: string;
   transcript: string | null;
@@ -656,6 +678,265 @@ export const checkinService = {
     }
 
     return true;
+  },
+};
+
+// Client management functions
+export const clientService = {
+  // Get all clients for current coach
+  async getClients(): Promise<Client[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return [];
+    }
+
+    // Get effective coach ID (user's own ID or their coach's ID if they're a team member)
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('coach_id', effectiveCoachId)
+      .order('last_checkin_at', { ascending: false, nullsFirst: false });
+
+    if (error) {
+      console.error('Error fetching clients:', error);
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // Get active clients only
+  async getActiveClients(): Promise<Client[]> {
+    const clients = await this.getClients();
+    return clients.filter(client => client.status === 'active');
+  },
+
+  // Get client by ID
+  async getClientById(clientId: string): Promise<Client | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return null;
+    }
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', clientId)
+      .eq('coach_id', effectiveCoachId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching client:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Create new client
+  async createClient(clientData: Omit<Client, 'id' | 'coach_id' | 'created_at' | 'updated_at' | 'total_checkins' | 'last_checkin_at'>): Promise<Client | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return null;
+    }
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('clients')
+      .insert({
+        ...clientData,
+        coach_id: effectiveCoachId
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating client:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Update client
+  async updateClient(clientId: string, updates: Partial<Omit<Client, 'id' | 'coach_id' | 'created_at' | 'updated_at'>>): Promise<Client | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return null;
+    }
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('clients')
+      .update(updates)
+      .eq('id', clientId)
+      .eq('coach_id', effectiveCoachId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating client:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Delete client
+  async deleteClient(clientId: string): Promise<boolean> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return false;
+    }
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return false;
+    }
+
+    const { error } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', clientId)
+      .eq('coach_id', effectiveCoachId);
+
+    if (error) {
+      console.error('Error deleting client:', error);
+      return false;
+    }
+
+    return true;
+  },
+
+  // Get client checkin history
+  async getClientCheckins(clientId: string, limit: number = 50): Promise<Checkin[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return [];
+    }
+
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('checkins')
+      .select('*')
+      .eq('coach_id', effectiveCoachId)
+      .eq('client_id', clientId)
+      .order('date', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching client checkins:', error);
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // Get client analytics/stats
+  async getClientAnalytics(clientId: string): Promise<{
+    totalCheckins: number;
+    pendingCheckins: number;
+    respondedCheckins: number;
+    averageResponseTime: number | null;
+    lastCheckinDate: string | null;
+    engagementTrend: 'improving' | 'stable' | 'declining' | 'unknown';
+  }> {
+    const checkins = await this.getClientCheckins(clientId, 100); // Get more for analytics
+    
+    const totalCheckins = checkins.length;
+    const pendingCheckins = checkins.filter(c => c.status === 'pending_response').length;
+    const respondedCheckins = checkins.filter(c => c.status === 'responded').length;
+    const lastCheckinDate = checkins.length > 0 ? checkins[0].date : null;
+    
+    // Calculate average response time for responded checkins
+    const respondedCheckinsWithTimes = checkins
+      .filter(c => c.status === 'responded' && c.response_submitted_at)
+      .map(c => {
+        const checkinDate = new Date(c.created_at);
+        const responseDate = new Date(c.response_submitted_at!);
+        return responseDate.getTime() - checkinDate.getTime();
+      });
+    
+    const averageResponseTime = respondedCheckinsWithTimes.length > 0 
+      ? respondedCheckinsWithTimes.reduce((sum, time) => sum + time, 0) / respondedCheckinsWithTimes.length / (1000 * 60 * 60) // Convert to hours
+      : null;
+    
+    // Simple engagement trend based on checkin frequency in last 30 days vs previous 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    
+    const recentCheckins = checkins.filter(c => new Date(c.date) >= thirtyDaysAgo).length;
+    const previousCheckins = checkins.filter(c => {
+      const date = new Date(c.date);
+      return date >= sixtyDaysAgo && date < thirtyDaysAgo;
+    }).length;
+    
+    let engagementTrend: 'improving' | 'stable' | 'declining' | 'unknown' = 'unknown';
+    if (recentCheckins > previousCheckins) {
+      engagementTrend = 'improving';
+    } else if (recentCheckins === previousCheckins) {
+      engagementTrend = 'stable';
+    } else if (previousCheckins > 0) {
+      engagementTrend = 'declining';
+    }
+    
+    return {
+      totalCheckins,
+      pendingCheckins,
+      respondedCheckins,
+      averageResponseTime,
+      lastCheckinDate,
+      engagementTrend
+    };
+  },
+
+  // Search clients by name
+  async searchClients(query: string): Promise<Client[]> {
+    const clients = await this.getClients();
+    return clients.filter(client => 
+      client.full_name.toLowerCase().includes(query.toLowerCase()) ||
+      (client.email && client.email.toLowerCase().includes(query.toLowerCase()))
+    );
+  },
+
+  // Get clients with recent activity
+  async getClientsWithRecentActivity(days: number = 7): Promise<Client[]> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    
+    const clients = await this.getClients();
+    return clients.filter(client => 
+      client.last_checkin_at && new Date(client.last_checkin_at) >= cutoffDate
+    );
   },
 };
 

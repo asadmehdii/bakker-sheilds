@@ -8,6 +8,9 @@ import CheckinAIApp from './pages/CheckinAIApp';
 import CheckinDetailPage from './pages/CheckinDetailPage';
 import AuthPage from './pages/AuthPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
+import ClientsDashboard from './pages/ClientsDashboard';
+import ClientProfile from './pages/ClientProfile';
+import ClientForm from './pages/ClientForm';
 import { logService } from './lib/supabase';
 
 function App() {
@@ -54,19 +57,49 @@ function App() {
                 <AccountSettingsPage />
               </ProtectedRoute>
             } />
+            {/* Clients Routes - Primary Interface */}
             <Route path="/" element={
               <ProtectedRoute>
-                <CheckinAIApp />
+                <ClientsDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/clients" element={
+              <ProtectedRoute>
+                <ClientsDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/clients/new" element={
+              <ProtectedRoute>
+                <ClientForm />
               </ProtectedRoute>
             } />
             <Route path="/client/:clientId" element={
               <ProtectedRoute>
-                <CheckinAIApp />
+                <ClientProfile />
               </ProtectedRoute>
             } />
+            <Route path="/client/:clientId/edit" element={
+              <ProtectedRoute>
+                <ClientForm />
+              </ProtectedRoute>
+            } />
+            
+            {/* Check-ins Routes */}
             <Route path="/checkin/:checkinId" element={
               <ProtectedRoute>
                 <CheckinDetailPage />
+              </ProtectedRoute>
+            } />
+            
+            {/* Legacy Check-ins View - still available but not primary */}
+            <Route path="/checkins" element={
+              <ProtectedRoute>
+                <CheckinAIApp />
+              </ProtectedRoute>
+            } />
+            <Route path="/checkins/client/:clientId" element={
+              <ProtectedRoute>
+                <CheckinAIApp />
               </ProtectedRoute>
             } />
           </Routes>
