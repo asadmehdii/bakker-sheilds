@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Edit, MessageSquare, Calendar, TrendingUp, TrendingDown, Clock, Mail, Phone, MapPin, Target, FileText, Trash2, Archive, Reply, CheckCircle, Minus } from 'lucide-react';
 import { clientService, checkinService, supabase, type Client, type Checkin } from '../lib/supabase';
+import Navigation from '../components/Navigation';
 
 function ClientProfile() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -130,7 +131,8 @@ function ClientProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">

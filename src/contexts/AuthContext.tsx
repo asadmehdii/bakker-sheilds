@@ -126,6 +126,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setSession(session);
         setUser(session?.user ?? null);
         
+        // Ensure loading is false after auth state changes
+        setLoading(false);
+        
         // Log authentication events
         if (event === 'SIGNED_IN') {
           logService.logEvent('login', {

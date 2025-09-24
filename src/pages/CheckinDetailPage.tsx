@@ -743,7 +743,7 @@ function CheckinDetailPage() {
                       {message.sender === 'user' ? (
                         <span className="text-slate-600 text-sm font-medium">U</span>
                       ) : (
-                        <currentAI.icon className="w-4 h-4 text-white" />
+                        <Sparkles className="w-4 h-4 text-white" />
                       )}
                     </div>
                     <div className={`px-4 py-3 rounded-2xl shadow-sm ${
@@ -774,7 +774,7 @@ function CheckinDetailPage() {
                 <div className="flex justify-start">
                   <div className="flex items-start space-x-3 max-w-3xl">
                     <div className="w-8 h-8 bg-gradient-to-r from-teal-500 to-emerald-600 rounded-full flex items-center justify-center">
-                      <currentAI.icon className="w-4 h-4 text-white" />
+                      <Sparkles className="w-4 h-4 text-white" />
                     </div>
                     <div className="bg-white text-slate-800 border border-slate-200 px-4 py-3 rounded-2xl shadow-sm">
                       <div className="flex space-x-1">

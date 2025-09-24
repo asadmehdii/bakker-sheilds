@@ -25,14 +25,11 @@ interface ThemeProviderProps {
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>('light');
 
-  // Initialize theme from localStorage or system preference
+  // Force light theme only
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as Theme;
-    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    const initialTheme = savedTheme || systemTheme;
-    
-    setThemeState(initialTheme);
-    document.documentElement.classList.toggle('dark', initialTheme === 'dark');
+    setThemeState('light');
+    document.documentElement.classList.remove('dark');
+    localStorage.setItem('theme', 'light');
   }, []);
 
   // Update theme and save to localStorage

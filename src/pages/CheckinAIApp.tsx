@@ -6,6 +6,7 @@ import { chatService, checkinService, checkinWebhookService, teamService, logSer
 import UserMenu from '../components/UserMenu';
 import CheckinWebhookSettingsModal from '../components/CheckinWebhookSettingsModal';
 import CoachResponseModal from '../components/CoachResponseModal';
+import Navigation from '../components/Navigation';
 
 interface Message {
   id: string;
@@ -239,59 +240,37 @@ function CheckinAIApp() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-black dark:via-gray-900 dark:to-black transition-colors duration-300">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-900 border-b border-slate-200 dark:border-gray-800 shadow-sm transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link 
-                to="/" 
-                className="p-2 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-                title="Back to AI Suite"
-              >
-                <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-gray-300" />
-              </Link>
-              <img 
-                src="/Copy of ar-logo-black.png" 
-                alt="ARFunnel" 
-                className="h-8 w-auto dark:hidden"
-              />
-              <img 
-                src="/ar-logo-white (1).png" 
-                alt="ARFunnel" 
-                className="h-8 w-auto hidden dark:block"
-              />
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="font-semibold text-slate-800 dark:text-white">CheckinAI</h2>
-                  <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                    <span className="text-xs text-slate-500">Online</span>
-                  </div>
-                </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <MessageSquare className="w-8 h-8 text-blue-600" />
+                {clientId && clientName ? `${clientName} Check-ins` : 'All Check-ins'}
+              </h1>
+              <p className="mt-2 text-gray-600">
+                {clientId && clientName 
+                  ? `Manage check-ins from ${clientName}`
+                  : isTeamMember 
+                    ? 'View and respond to check-ins across your team'
+                    : 'View and respond to all check-ins from your clients'
+                }
+              </p>
+            </div>
+            {pendingCheckinsCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-200 rounded-lg">
+                <Bell className="w-5 h-5 text-orange-600" />
+                <span className="text-orange-700 font-medium">{pendingCheckinsCount} pending</span>
               </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setShowWebhookSettingsModal(true)}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg font-medium transition-all duration-200 ${
-                  hasWebhookConfigured 
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                    : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                }`}
-              >
-                <Webhook className="w-4 h-4" />
-                <span className="text-sm">{hasWebhookConfigured ? 'Connected' : 'Setup Webhook'}</span>
-              </button>
-              <UserMenu />
-            </div>
+            )}
           </div>
         </div>
-      </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
       {/* Webhook Setup Banner */}
       {!hasWebhookConfigured && (
@@ -474,6 +453,8 @@ function CheckinAIApp() {
 
       {/* Coach Response Modal */}
       {/* Coach response modal removed - now handled on dedicated page */}
+        </div>
+      </div>
     </div>
   );
 }

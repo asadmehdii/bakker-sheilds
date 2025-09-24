@@ -307,6 +307,199 @@ export const userService = {
 
     console.log('✅ [User Service] Retrieved existing user profile:', existingProfile);
     return existingProfile;
+  },
+
+  // Update user profile
+  async updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.log('🔍 [User Service] No user found when updating profile');
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ [User Service] Error updating user profile:', error);
+      return null;
+    }
+
+    console.log('✅ [User Service] Updated user profile:', data);
+    return data;
+  },
+
+  // Get user's webhook URL (generates one if needed)
+  async getUserWebhookUrl(): Promise<string | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.log('⚠️ [getUserWebhookUrl] No authenticated user found');
+      return null;
+    }
+
+    // Get webhook settings to find the token
+    const webhookSettings = await checkinWebhookService.getUserCheckinWebhookSettings();
+    
+    if (webhookSettings?.webhook_secret) {
+      // Use existing webhook token
+      const webhookUrl = `https://xakmijacmllazbmnaxeg.supabase.co/functions/v1/webhook-checkin/${user.id}/${webhookSettings.webhook_secret}`;
+      console.log('✅ [getUserWebhookUrl] Using existing webhook URL');
+      return webhookUrl;
+    } else {
+      // Generate a new webhook token if none exists
+      const newToken = crypto.randomUUID();
+      
+      // Create or update webhook settings with the new token
+      const { error } = await supabase
+        .from('user_checkin_webhook_settings')
+        .upsert({
+          user_id: user.id,
+          webhook_secret: newToken,
+          is_active: true,
+          primary_identifier: 'phone',
+          fallback_identifier: 'email',
+          auto_create_clients: true,
+          new_client_status: 'active',
+          new_client_engagement: 'medium'
+        });
+
+      if (error) {
+        console.error('❌ [getUserWebhookUrl] Error creating webhook settings:', error);
+        return null;
+      }
+
+      const webhookUrl = `https://xakmijacmllazbmnaxeg.supabase.co/functions/v1/webhook-checkin/${user.id}/${newToken}`;
+      console.log('✅ [getUserWebhookUrl] Created new webhook URL');
+      return webhookUrl;
+    }
+  },
+
+  // Ensure webhook settings exist for the current user
+  async ensureWebhookSettingsExist(integrationName?: string): Promise<{ error?: any }> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return { error: 'No authenticated user found' };
+    }
+
+    try {
+      // Check if webhook settings already exist
+      const existingSettings = await checkinWebhookService.getUserCheckinWebhookSettings();
+      
+      if (existingSettings && existingSettings.webhook_secret) {
+        // Update the integration name if provided and settings exist
+        if (integrationName) {
+          const { error } = await supabase
+            .from('user_checkin_webhook_settings')
+            .update({
+              integration_name: integrationName,
+              is_active: true,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', user.id);
+            
+          if (error) {
+            console.error('Error updating webhook settings:', error);
+            return { error };
+          }
+        }
+        
+        return {}; // Success - settings already exist
+      } else {
+        // Create new webhook settings
+        const newToken = crypto.randomUUID();
+        
+        const { error } = await supabase
+          .from('user_checkin_webhook_settings')
+          .upsert({
+            user_id: user.id,
+            webhook_secret: newToken,
+            integration_name: integrationName || 'Webhook Integration',
+            is_active: true,
+            primary_identifier: 'phone',
+            fallback_identifier: 'email',
+            auto_create_clients: true,
+            new_client_status: 'active',
+            new_client_engagement: 'medium'
+          });
+
+        if (error) {
+          console.error('Error creating webhook settings:', error);
+          return { error };
+        }
+
+        return {}; // Success - new settings created
+      }
+    } catch (error) {
+      console.error('Error in ensureWebhookSettingsExist:', error);
+      return { error };
+    }
+  },
+
+  // Get user's current integrations
+  async getUserIntegrations(): Promise<any[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.log('⚠️ [getUserIntegrations] No authenticated user found');
+      return [];
+    }
+
+    // Get effective coach ID (user's own ID or their coach's ID if they're a team member)
+    const effectiveCoachId = await teamService.getEffectiveCoachId();
+    if (!effectiveCoachId) {
+      console.log('⚠️ [getUserIntegrations] No effective coach ID');
+      return [];
+    }
+
+    const integrations: any[] = [];
+
+    // Check for existing webhook integration
+    const webhookSettings = await checkinWebhookService.getUserCheckinWebhookSettings();
+    if (webhookSettings?.webhook_secret && webhookSettings.is_active) {
+      const webhookUrl = `https://xakmijacmllazbmnaxeg.supabase.co/functions/v1/webhook-checkin/${user.id}/${webhookSettings.webhook_secret}`;
+      
+      // Get some basic stats for the webhook integration
+      const { data: checkinsData } = await supabase
+        .from('checkins')
+        .select('id, date')
+        .eq('coach_id', effectiveCoachId)
+        .order('date', { ascending: false })
+        .limit(1);
+
+      const totalSubmissions = await supabase
+        .from('checkins')
+        .select('id', { count: 'exact' })
+        .eq('coach_id', effectiveCoachId);
+
+      integrations.push({
+        id: 'webhook-' + user.id,
+        type: 'custom_webhook',
+        name: webhookSettings.integration_name || 'Webhook Integration',
+        status: 'connected',
+        config: {
+          webhook_url: webhookUrl,
+          primary_identifier: webhookSettings.primary_identifier,
+          fallback_identifier: webhookSettings.fallback_identifier,
+          auto_create_clients: webhookSettings.auto_create_clients
+        },
+        created_at: webhookSettings.created_at,
+        last_activity: checkinsData?.[0]?.date || webhookSettings.updated_at,
+        total_submissions: totalSubmissions.count || 0
+      });
+    }
+
+    // TODO: Add integration storage table for Pipedream integrations
+    // For now, this will only show webhook integrations
+
+    console.log('✅ [getUserIntegrations] Retrieved integrations:', integrations.length);
+    return integrations;
   }
 };
 
@@ -315,7 +508,13 @@ export interface UserCheckinWebhookSettings {
   id: string;
   user_id: string;
   webhook_secret: string | null;
+  integration_name?: string;
   is_active: boolean;
+  primary_identifier?: string;
+  fallback_identifier?: string;
+  auto_create_clients?: boolean;
+  new_client_status?: string;
+  new_client_engagement?: string;
   created_at: string;
   updated_at: string;
 }
@@ -695,18 +894,24 @@ export const checkinService = {
 export const clientService = {
   // Get all clients for current coach
   async getClients(): Promise<Client[]> {
+    console.log('🔍 [clientService] getClients() called');
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
+      console.log('❌ [clientService] No user found');
       return [];
     }
 
+    console.log('🔍 [clientService] User found:', user.id);
     // Get effective coach ID (user's own ID or their coach's ID if they're a team member)
     const effectiveCoachId = await teamService.getEffectiveCoachId();
+    console.log('🔍 [clientService] Effective coach ID:', effectiveCoachId);
     if (!effectiveCoachId) {
+      console.log('❌ [clientService] No effective coach ID');
       return [];
     }
 
+    console.log('🔍 [clientService] Querying clients table...');
     const { data, error } = await supabase
       .from('clients')
       .select('*')
@@ -714,10 +919,11 @@ export const clientService = {
       .order('last_checkin_at', { ascending: false, nullsFirst: false });
 
     if (error) {
-      console.error('Error fetching clients:', error);
+      console.error('❌ [clientService] Error fetching clients:', error);
       return [];
     }
 
+    console.log('✅ [clientService] Successfully fetched clients:', data?.length || 0);
     return data || [];
   },
 
@@ -1189,7 +1395,7 @@ ${checkin.transcript?.substring(0, 500)}...`
 
 // Team member functions
 export const teamService = {
-  // Get the coach ID for the current user (returns user ID if they are a coach, or their coach's ID if they are a team member)
+  // Get the coach ID for the current user (optimized for single-coach setup)
   async getEffectiveCoachId(): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -1197,66 +1403,23 @@ export const teamService = {
       return null;
     }
 
-    // Use .maybeSingle() to handle no rows without error
-    const { data: teamMember, error } = await supabase
-      .from('team_members')
-      .select('coach_id')
-      .eq('member_id', user.id)
-      .eq('status', 'active')
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('❌ [Team Service] Error fetching team member:', error);
-      return user.id; // Fallback to user's own ID
-    }
-
-    // Return coach ID if user is a team member, otherwise return user's own ID
-    return teamMember?.coach_id || user.id;
+    // For now, just return the user's ID (simplified for single-coach setup)
+    // This eliminates the slow team_members table query
+    return user.id;
   },
 
-  // Check if current user is a team member (not the coach)
+  // Check if current user is a team member (optimized for single-coach setup)
   async isTeamMember(): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return false;
-    }
-
-    const { data: teamMember, error } = await supabase
-      .from('team_members')
-      .select('id')
-      .eq('member_id', user.id)
-      .eq('status', 'active')
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error checking team member status:', error);
-      return false;
-    }
-    return !!teamMember;
+    // For now, return false (simplified for single-coach setup)
+    // This eliminates the team_members table query causing 406 errors
+    return false;
   },
 
-  // Get team member role
+  // Get team member role (optimized for single-coach setup)
   async getTeamMemberRole(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return null;
-    }
-
-    const { data: teamMember, error } = await supabase
-      .from('team_members')
-      .select('role')
-      .eq('member_id', user.id)
-      .eq('status', 'active')
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error fetching team member role:', error);
-      return null;
-    }
-
-    return teamMember?.role || null;
+    // For now, return null (simplified for single-coach setup)
+    // This eliminates the team_members table query causing 406 errors
+    return null;
   }
 };
 

@@ -11,6 +11,8 @@ import AccountSettingsPage from './pages/AccountSettingsPage';
 import ClientsDashboard from './pages/ClientsDashboard';
 import ClientProfile from './pages/ClientProfile';
 import ClientForm from './pages/ClientForm';
+import IntegrationsPage from './pages/IntegrationsPage';
+import IntegrationCallbackPage from './pages/IntegrationCallbackPage';
 import { logService } from './lib/supabase';
 
 function App() {
@@ -57,6 +59,16 @@ function App() {
                 <AccountSettingsPage />
               </ProtectedRoute>
             } />
+            <Route path="/integrations" element={
+              <ProtectedRoute>
+                <IntegrationsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/integrations/callback" element={
+              <ProtectedRoute>
+                <IntegrationCallbackPage />
+              </ProtectedRoute>
+            } />
             {/* Clients Routes - Primary Interface */}
             <Route path="/" element={
               <ProtectedRoute>
@@ -91,7 +103,7 @@ function App() {
               </ProtectedRoute>
             } />
             
-            {/* Legacy Check-ins View - still available but not primary */}
+            {/* Check-ins View - View all pending check-ins */}
             <Route path="/checkins" element={
               <ProtectedRoute>
                 <CheckinAIApp />
