@@ -233,6 +233,10 @@ function CheckinDetailPage() {
           tags: checkinData.tags
         }),
       });
+    } catch (error) {
+      console.error('Error sending message to Supabase:', error);
+      throw error;
+    }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
