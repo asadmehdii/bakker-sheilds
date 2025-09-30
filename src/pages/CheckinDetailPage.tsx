@@ -276,3 +276,8 @@ function CheckinDetailPage() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
+      }
+      )
+    }
+  }
+}
