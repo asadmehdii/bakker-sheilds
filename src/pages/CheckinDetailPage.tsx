@@ -716,7 +716,6 @@ function CheckinDetailPage() {
       )}
     </div>
   );
-  };
 }
 
 export default CheckinDetailPage;
