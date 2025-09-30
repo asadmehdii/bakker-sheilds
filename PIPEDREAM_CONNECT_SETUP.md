@@ -154,7 +154,7 @@ Update the webhook URL generation in `IntegrationSetupModal.tsx`:
 const { user } = useAuth(); // Your auth context
 const webhookToken = user?.webhook_token || 'generate-token-here';
 
-const webhookUrl = `https://xakmijacmllazbmnaxeg.supabase.co/functions/v1/webhook-checkin/${user.id}/${webhookToken}`;
+const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-checkin/${user.id}/${webhookToken}`;
 ```
 
 ### 4. Add Integration Callback Route
