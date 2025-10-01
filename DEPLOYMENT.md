@@ -149,5 +149,19 @@ This endpoint:
 ✅ [User Service] Retrieved existing user profile: {...}
 ```
 
+### Database Migration Applied (CRITICAL)
+**Migration**: `fix_missing_auth_trigger`
+
+**Issue Found**: The auth trigger that auto-creates user profiles was missing, causing 500 errors during signup.
+
+**Fix Applied**: Recreated the `on_auth_user_created` trigger on `auth.users` table.
+
+**Status**: ✅ **DEPLOYED TO LIVE DATABASE** - Trigger is now active and will auto-create profiles for new signups.
+
 ### Rollback Plan
-If issues occur, the previous Netlify deployment can be restored via the Netlify dashboard. No database changes were made, so no database rollback is needed.
+If issues occur with the frontend, the previous Netlify deployment can be restored via the Netlify dashboard.
+
+**Database Rollback**: If the trigger causes issues, run:
+```sql
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+```
