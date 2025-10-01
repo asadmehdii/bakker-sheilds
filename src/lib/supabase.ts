@@ -1666,6 +1666,8 @@ export const logService = {
 
       return true;
     } catch (error) {
+      // Silently fail - logging is optional and should not break the app
+      // CORS errors from log-app-event function are expected if it doesn't exist
       return false;
     }
   },
