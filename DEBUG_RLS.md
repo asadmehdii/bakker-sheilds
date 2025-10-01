@@ -86,10 +86,16 @@ When loading or updating profiles, you'll see detailed logs:
 ```
 
 ### Error Codes
-- **PGRST116**: No rows returned (profile doesn't exist)
+- **PGRST116**: ❌ **DEPRECATED** - This error should no longer appear (we now use `maybeSingle()`)
 - **PGRST301**: RLS policy violation (access denied)
+- **406 Not Acceptable**: Usually caused by using `.single()` when 0 rows exist (fixed by using `.maybeSingle()`)
 
 ## Common Issues & Solutions
+
+### Issue: "406 Not Acceptable" with PGRST116
+**Cause:** Using `.single()` instead of `.maybeSingle()` for queries that might return 0 rows.
+
+**Solution:** This has been fixed in the latest code. All user profile queries now use `.maybeSingle()` which gracefully handles missing rows.
 
 ### Issue: "RLS POLICY VIOLATION"
 **Error Code:** PGRST301

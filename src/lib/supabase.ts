@@ -301,7 +301,7 @@ export const userService = {
       .from('user_profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (checkError) {
       console.error('❌ [User Service] Error checking user profile:', {
@@ -311,41 +311,47 @@ export const userService = {
         hint: checkError.hint
       });
 
-      if (checkError.code === 'PGRST116') {
-        console.log('⚠️ [User Service] No profile found (PGRST116), attempting to create one...');
-        // Create profile if it doesn't exist
-        const { data: newProfile, error: createError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: user.id,
-            email: user.email || '',
-            full_name: user.user_metadata?.full_name || user.email || '',
-            app_role: 'user' // Default role
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          console.error('❌ [User Service] Error creating user profile:', {
-            code: createError.code,
-            message: createError.message,
-            details: createError.details,
-            hint: createError.hint
-          });
-          return null;
-        }
-
-        console.log('✅ [User Service] Created new user profile:', newProfile);
-        return newProfile;
-      } else if (checkError.code === 'PGRST301') {
+      if (checkError.code === 'PGRST301') {
         console.error('🚫 [User Service] RLS POLICY VIOLATION - User cannot read their own profile!');
         console.error('🔍 [User Service] This means the RLS policy "Users can view own profile" is not working correctly.');
         console.error('🔍 [User Service] Check that auth.uid() = id condition is being evaluated properly.');
-        return null;
-      } else {
-        console.error('❌ [User Service] Unknown error checking user profile');
+      }
+
+      return null;
+    }
+
+    // If no profile exists, create one
+    if (!existingProfile) {
+      console.log('⚠️ [User Service] No profile found, attempting to create one...');
+      const { data: newProfile, error: createError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: user.id,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.email || '',
+          app_role: 'user' // Default role
+        })
+        .select()
+        .maybeSingle();
+
+      if (createError) {
+        console.error('❌ [User Service] Error creating user profile:', {
+          code: createError.code,
+          message: createError.message,
+          details: createError.details,
+          hint: createError.hint
+        });
+
+        if (createError.code === 'PGRST301') {
+          console.error('🚫 [User Service] RLS POLICY VIOLATION - User cannot insert their own profile!');
+          console.error('🔍 [User Service] This means the RLS policy "Users can insert own profile" is not working correctly.');
+        }
+
         return null;
       }
+
+      console.log('✅ [User Service] Created new user profile:', newProfile);
+      return newProfile;
     }
 
     console.log('✅ [User Service] Retrieved existing user profile:', {
@@ -381,7 +387,7 @@ export const userService = {
       .update(updates)
       .eq('id', user.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('❌ [User Service] Error updating user profile:', {
@@ -1583,10 +1589,12 @@ export const debugService = {
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('🔍 [Debug Service] RLS debugging complete');
       console.log('\n💡 TIPS:');
+      console.log('  - All queries use .maybeSingle() to avoid 406 errors');
       console.log('  - Check the database RLS policies in Supabase dashboard');
       console.log('  - Verify auth.uid() equals your user ID in policies');
       console.log('  - Ensure all policies use "authenticated" role');
       console.log('  - Check for typos in policy conditions');
+      console.log('\n📚 For detailed guide, see: DEBUG_RLS.md');
     } catch (error) {
       console.error('❌ Fatal error during debugging:', error);
     }
