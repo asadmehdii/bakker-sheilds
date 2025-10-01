@@ -261,16 +261,42 @@ export const chatService = {
 export const userService = {
   // Get current user's profile
   async getUserProfile(): Promise<UserProfile | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      console.log('🔍 [User Service] No user found when getting profile');
+    console.log('🔍 [User Service] getUserProfile() called');
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error('❌ [User Service] Error getting authenticated user:', userError);
       return null;
     }
 
-    console.log('🔍 [User Service] Getting profile for user:', user.id, user.email);
+    if (!user) {
+      console.log('⚠️ [User Service] No user found when getting profile');
+      return null;
+    }
+
+    console.log('✅ [User Service] Authenticated user found:', {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      aud: user.aud
+    });
+
+    // Check current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.error('❌ [User Service] Error getting session:', sessionError);
+    } else {
+      console.log('📋 [User Service] Session info:', {
+        hasSession: !!session,
+        accessToken: session?.access_token ? `${session.access_token.substring(0, 20)}...` : 'none',
+        expiresAt: session?.expires_at,
+        userId: session?.user?.id
+      });
+    }
 
     // First check if profile exists
+    console.log('🔍 [User Service] Querying user_profiles table for user:', user.id);
     const { data: existingProfile, error: checkError } = await supabase
       .from('user_profiles')
       .select('*')
@@ -278,8 +304,15 @@ export const userService = {
       .single();
 
     if (checkError) {
+      console.error('❌ [User Service] Error checking user profile:', {
+        code: checkError.code,
+        message: checkError.message,
+        details: checkError.details,
+        hint: checkError.hint
+      });
+
       if (checkError.code === 'PGRST116') {
-        console.log('⚠️ [User Service] No profile found, creating one...');
+        console.log('⚠️ [User Service] No profile found (PGRST116), attempting to create one...');
         // Create profile if it doesn't exist
         const { data: newProfile, error: createError } = await supabase
           .from('user_profiles')
@@ -293,30 +326,55 @@ export const userService = {
           .single();
 
         if (createError) {
-          console.error('❌ [User Service] Error creating user profile:', createError);
+          console.error('❌ [User Service] Error creating user profile:', {
+            code: createError.code,
+            message: createError.message,
+            details: createError.details,
+            hint: createError.hint
+          });
           return null;
         }
 
         console.log('✅ [User Service] Created new user profile:', newProfile);
         return newProfile;
+      } else if (checkError.code === 'PGRST301') {
+        console.error('🚫 [User Service] RLS POLICY VIOLATION - User cannot read their own profile!');
+        console.error('🔍 [User Service] This means the RLS policy "Users can view own profile" is not working correctly.');
+        console.error('🔍 [User Service] Check that auth.uid() = id condition is being evaluated properly.');
+        return null;
       } else {
-        console.error('❌ [User Service] Error checking user profile:', checkError);
+        console.error('❌ [User Service] Unknown error checking user profile');
         return null;
       }
     }
 
-    console.log('✅ [User Service] Retrieved existing user profile:', existingProfile);
+    console.log('✅ [User Service] Retrieved existing user profile:', {
+      id: existingProfile.id,
+      email: existingProfile.email,
+      full_name: existingProfile.full_name,
+      app_role: existingProfile.app_role
+    });
     return existingProfile;
   },
 
   // Update user profile
   async updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      console.log('🔍 [User Service] No user found when updating profile');
+    console.log('🔍 [User Service] updateUserProfile() called with updates:', updates);
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error('❌ [User Service] Error getting authenticated user:', userError);
       return null;
     }
+
+    if (!user) {
+      console.log('⚠️ [User Service] No user found when updating profile');
+      return null;
+    }
+
+    console.log('✅ [User Service] Authenticated user found:', user.id);
+    console.log('🔍 [User Service] Attempting to update user_profiles table...');
 
     const { data, error } = await supabase
       .from('user_profiles')
@@ -326,7 +384,18 @@ export const userService = {
       .single();
 
     if (error) {
-      console.error('❌ [User Service] Error updating user profile:', error);
+      console.error('❌ [User Service] Error updating user profile:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+
+      if (error.code === 'PGRST301') {
+        console.error('🚫 [User Service] RLS POLICY VIOLATION - User cannot update their own profile!');
+        console.error('🔍 [User Service] This means the RLS policy "Users can update own profile" is not working correctly.');
+      }
+
       return null;
     }
 
@@ -1420,6 +1489,135 @@ export const teamService = {
     // For now, return null (simplified for single-coach setup)
     // This eliminates the team_members table query causing 406 errors
     return null;
+  }
+};
+
+// Debug service for RLS issues
+export const debugService = {
+  // Run comprehensive RLS debugging
+  async debugRLS(): Promise<void> {
+    console.log('🔍 [Debug Service] Starting RLS debugging...');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    try {
+      // Check 1: Authentication status
+      console.log('\n📋 CHECK 1: Authentication Status');
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error('❌ Error getting user:', userError);
+        return;
+      }
+
+      if (!user) {
+        console.warn('⚠️ No authenticated user found');
+        return;
+      }
+
+      console.log('✅ User authenticated:', {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      });
+
+      // Check 2: Session status
+      console.log('\n📋 CHECK 2: Session Status');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('❌ Error getting session:', sessionError);
+      } else if (session) {
+        console.log('✅ Session active:', {
+          expiresAt: new Date(session.expires_at! * 1000).toISOString(),
+          hasAccessToken: !!session.access_token,
+        });
+      } else {
+        console.warn('⚠️ No active session');
+      }
+
+      // Check 3: Query user profile
+      console.log('\n📋 CHECK 3: Query User Profile');
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('❌ Error querying profile:', {
+          code: profileError.code,
+          message: profileError.message,
+          details: profileError.details,
+          hint: profileError.hint,
+        });
+
+        if (profileError.code === 'PGRST301') {
+          console.error('\n🚨 RLS POLICY VIOLATION DETECTED!');
+          console.error('This means the RLS policies are blocking your access.');
+          console.error('Expected policy: "Users can view own profile" with condition: auth.uid() = id');
+        }
+      } else if (profile) {
+        console.log('✅ Profile retrieved:', {
+          id: profile.id,
+          email: profile.email,
+          app_role: profile.app_role,
+        });
+      } else {
+        console.warn('⚠️ No profile found for user');
+      }
+
+      // Check 4: Call debug edge function
+      console.log('\n📋 CHECK 4: Server-Side RLS Debug');
+      try {
+        const { data: debugData, error: debugError } = await supabase.functions.invoke('debug-rls');
+
+        if (debugError) {
+          console.error('❌ Error calling debug function:', debugError);
+        } else {
+          console.log('✅ Debug function results:', debugData);
+        }
+      } catch (err) {
+        console.error('❌ Failed to call debug function:', err);
+      }
+
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔍 [Debug Service] RLS debugging complete');
+      console.log('\n💡 TIPS:');
+      console.log('  - Check the database RLS policies in Supabase dashboard');
+      console.log('  - Verify auth.uid() equals your user ID in policies');
+      console.log('  - Ensure all policies use "authenticated" role');
+      console.log('  - Check for typos in policy conditions');
+    } catch (error) {
+      console.error('❌ Fatal error during debugging:', error);
+    }
+  },
+
+  // Quick check if RLS is working
+  async quickCheck(): Promise<boolean> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log('❌ Not authenticated');
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ RLS Check Failed:', error.code, error.message);
+      return false;
+    }
+
+    if (data) {
+      console.log('✅ RLS is working - can read own profile');
+      return true;
+    }
+
+    console.warn('⚠️ No profile found');
+    return false;
   }
 };
 
