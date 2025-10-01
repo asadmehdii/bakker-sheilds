@@ -1427,8 +1427,8 @@ export const teamService = {
 export const logService = {
   // Log an application event
   async logEvent(
-    eventType: string, 
-    eventDetails: Record<string, any> = {}, 
+    eventType: string,
+    eventDetails: Record<string, any> = {},
     context: string = 'frontend'
   ): Promise<boolean> {
     try {
@@ -1436,12 +1436,11 @@ export const logService = {
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseAnonKey) {
-        console.warn('Supabase configuration missing for logging');
         return false;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       const response = await fetch(`${supabaseUrl}/functions/v1/log-app-event`, {
         method: 'POST',
         headers: {
@@ -1456,13 +1455,11 @@ export const logService = {
       });
 
       if (!response.ok) {
-        console.warn('Failed to log event:', eventType, response.status);
         return false;
       }
 
       return true;
     } catch (error) {
-      console.warn('Error logging event:', error);
       return false;
     }
   },

@@ -129,17 +129,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Ensure loading is false after auth state changes
         setLoading(false);
         
-        // Log authentication events
+        // Log authentication events (non-blocking)
         if (event === 'SIGNED_IN') {
           logService.logEvent('login', {
             user_id: session?.user?.id,
             email: session?.user?.email
-          });
+          }).catch(() => {});
         } else if (event === 'SIGNED_OUT') {
-          await logService.logEvent('logout', {
+          logService.logEvent('logout', {
             user_id: user?.id,
             email: user?.email
-          });
+          }).catch(() => {});
         }
       }
     );
@@ -157,15 +157,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       },
     });
-    
-    // Log signup attempt
+
+    // Log signup attempt (non-blocking)
     if (!error && data.user) {
       logService.logEvent('signup', {
         user_id: data.user.id,
         email: data.user.email
-      });
+      }).catch(() => {});
     }
-    
+
     return { error };
   };
 
@@ -180,15 +180,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = async () => {
     // Capture user data before sign out for logging
     const currentUser = user;
-    
-    // Log logout event before clearing session
+
+    // Log logout event before clearing session (non-blocking)
     if (currentUser) {
       logService.logEvent('logout', {
         user_id: currentUser.id,
         email: currentUser.email
-      });
+      }).catch(() => {});
     }
-    
+
     await supabase.auth.signOut();
   };
 
