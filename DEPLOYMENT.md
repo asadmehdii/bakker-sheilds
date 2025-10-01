@@ -103,3 +103,51 @@ This endpoint:
 - Supabase Dashboard > Edge Functions > Logs
 - Netlify Dashboard > Functions > Logs
 - Browser Developer Tools > Console for frontend errors
+
+---
+
+## RLS Fix Deployment (October 2025)
+
+### Critical Bug Fixed: 406 Not Acceptable Error
+
+**Issue**: Using `.single()` caused 406 errors when user profiles didn't exist during first login.
+
+**Fix**: Changed all user profile queries to use `.maybeSingle()` which gracefully handles missing rows.
+
+### Files Modified
+- `src/lib/supabase.ts` - Fixed queries and added debug service
+- `src/main.tsx` - Exposed debug functions to browser console
+- `supabase/functions/debug-rls/` - New diagnostic Edge Function
+- `DEBUG_RLS.md` - Complete troubleshooting guide
+
+### Verification After Deployment
+
+1. **Test New User Signup**
+   - Sign up with a new account
+   - Console should show: `✅ [User Service] Created new user profile`
+   - NO 406 errors should appear
+
+2. **Test Debug Functions**
+   - Open browser console
+   - Run: `debugRLS()`
+   - Should see comprehensive diagnostics
+
+3. **Verify Edge Function**
+   - Login to site
+   - Run in console: `const { data } = await supabase.functions.invoke('debug-rls'); console.log(data);`
+   - Should return RLS diagnostic data
+
+### Expected Console Output (Success)
+```
+🔧 Debug utilities available:
+  - debugRLS() - Run comprehensive RLS debugging
+  - quickCheckRLS() - Quick RLS check
+
+✅ [User Service] Authenticated user found: {...}
+📋 [User Service] Session info: {...}
+🔍 [User Service] Querying user_profiles table for user: ...
+✅ [User Service] Retrieved existing user profile: {...}
+```
+
+### Rollback Plan
+If issues occur, the previous Netlify deployment can be restored via the Netlify dashboard. No database changes were made, so no database rollback is needed.
