@@ -11,7 +11,7 @@ interface IntegrationSetupModalProps {
 
 interface Integration {
   id: string;
-  type: 'typeform' | 'google_forms' | 'custom_webhook';
+  type: 'typeform' | 'google_forms' | 'custom_webhook' | 'ghl';
   name: string;
   status: 'connected' | 'disconnected' | 'pending';
   config: any;
@@ -19,6 +19,14 @@ interface Integration {
 }
 
 const INTEGRATION_TYPES = [
+  {
+    id: 'ghl',
+    name: 'GoHighLevel',
+    description: 'Connect your GHL forms and surveys automatically',
+    icon: Zap,
+    color: 'from-purple-600 to-indigo-700',
+    popular: true
+  },
   {
     id: 'typeform',
     name: 'Typeform',
@@ -258,6 +266,40 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
     }
   };
 
+  const handleGHLConnect = async () => {
+    if (!user) {
+      console.error('User not authenticated');
+      return;
+    }
+
+    setIsConnecting(true);
+
+    try {
+      const ghlClientId = import.meta.env.VITE_GHL_CLIENT_ID;
+      const ghlRedirectUri = import.meta.env.VITE_GHL_REDIRECT_URI;
+
+      if (!ghlClientId || !ghlRedirectUri) {
+        alert('GHL integration not configured. Please contact support.');
+        return;
+      }
+
+      // Build GHL OAuth URL
+      const authUrl = new URL('https://marketplace.gohighlevel.com/oauth/chooselocation');
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', ghlClientId);
+      authUrl.searchParams.set('redirect_uri', ghlRedirectUri);
+      authUrl.searchParams.set('scope', 'contacts.readonly forms.readonly webhooks.write');
+      authUrl.searchParams.set('state', user.id); // Pass user ID as state
+
+      // Redirect to GHL OAuth
+      window.location.href = authUrl.toString();
+    } catch (error) {
+      console.error('Error initiating GHL OAuth:', error);
+      alert('Failed to connect to GoHighLevel. Please try again.');
+      setIsConnecting(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -323,7 +365,65 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
                 ← Back to integrations
               </button>
 
-              {selectedType === 'custom_webhook' ? (
+              {selectedType === 'ghl' ? (
+                /* GoHighLevel Setup */
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Connect GoHighLevel</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <div className="flex items-start">
+                        <Zap className="w-5 h-5 text-purple-600 mr-3 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-purple-900 mb-2">How It Works</h4>
+                          <div className="text-sm text-purple-800 space-y-2">
+                            <p><strong>1.</strong> Click "Connect GoHighLevel" to authorize access</p>
+                            <p><strong>2.</strong> Select which GHL location to connect</p>
+                            <p><strong>3.</strong> Choose specific forms to monitor</p>
+                            <p><strong>4.</strong> Form submissions automatically create check-ins!</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="font-medium text-blue-900 mb-2">What Gets Connected</h4>
+                      <ul className="text-sm text-blue-800 space-y-1">
+                        <li>• Read your forms and surveys</li>
+                        <li>• Access contact information (name, email, phone)</li>
+                        <li>• Receive form submission notifications</li>
+                      </ul>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4">
+                      <button
+                        onClick={() => setSelectedType(null)}
+                        className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        disabled={isConnecting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleGHLConnect}
+                        disabled={isConnecting}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            Connecting...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-4 h-4" />
+                            Connect GoHighLevel
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedType === 'custom_webhook' ? (
                 /* Custom Webhook Setup */
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Custom Webhook Setup</h3>

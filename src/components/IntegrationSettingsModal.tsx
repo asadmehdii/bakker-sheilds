@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { X, Settings, ExternalLink, Trash2, Copy, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Settings, ExternalLink, Trash2, Copy, Eye, EyeOff, FileText } from 'lucide-react';
+import GHLFormSelectionModal from './GHLFormSelectionModal';
+import { supabase } from '../lib/supabase';
 
 interface Integration {
   id: string;
-  type: 'typeform' | 'google_forms' | 'custom_webhook';
+  type: 'typeform' | 'google_forms' | 'custom_webhook' | 'ghl';
   name: string;
   status: 'connected' | 'disconnected' | 'pending';
   config: any;
@@ -31,12 +33,36 @@ function IntegrationSettingsModal({
   const [showWebhookUrl, setShowWebhookUrl] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showFormSelection, setShowFormSelection] = useState(false);
+  const [selectedForms, setSelectedForms] = useState<any[]>([]);
 
   useEffect(() => {
     if (integration) {
       setEditedIntegration({ ...integration });
+      
+      // Load selected forms for GHL integrations
+      if (integration.type === 'ghl') {
+        loadSelectedForms();
+      }
     }
   }, [integration]);
+
+  const loadSelectedForms = async () => {
+    if (!integration || integration.type !== 'ghl') return;
+
+    try {
+      const { data, error } = await supabase
+        .from('ghl_form_selections')
+        .select('*')
+        .eq('integration_id', integration.id)
+        .eq('is_active', true);
+
+      if (error) throw error;
+      setSelectedForms(data || []);
+    } catch (error) {
+      console.error('Error loading selected forms:', error);
+    }
+  };
 
   const handleSave = async () => {
     if (!editedIntegration) return;
@@ -209,8 +235,64 @@ function IntegrationSettingsModal({
                     </div>
                   </div>
                 )}
+
+                {/* GHL Location and Form Selection */}
+                {integration.type === 'ghl' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      GHL Location
+                    </label>
+                    <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm">
+                      {integration.config?.location_id || 'Connected'}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* GHL Selected Forms */}
+            {integration.type === 'ghl' && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Selected Forms</h3>
+                  <button
+                    onClick={() => setShowFormSelection(true)}
+                    className="px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    Manage Forms
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {selectedForms.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                      <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">No forms selected yet</p>
+                      <button
+                        onClick={() => setShowFormSelection(true)}
+                        className="mt-2 text-sm text-purple-600 hover:text-purple-700"
+                      >
+                        Select Forms →
+                      </button>
+                    </div>
+                  ) : (
+                    selectedForms.map((form) => (
+                      <div
+                        key={form.id}
+                        className="flex items-center p-3 bg-purple-50 border border-purple-200 rounded-lg"
+                      >
+                        <FileText className="w-5 h-5 text-purple-600 mr-3" />
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{form.form_name}</p>
+                          <p className="text-xs text-gray-500">
+                            Added {new Date(form.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Statistics */}
             <div>
@@ -285,6 +367,20 @@ function IntegrationSettingsModal({
           </button>
         </div>
       </div>
+
+      {/* GHL Form Selection Modal */}
+      {integration?.type === 'ghl' && (
+        <GHLFormSelectionModal
+          isOpen={showFormSelection}
+          onClose={() => setShowFormSelection(false)}
+          integrationId={integration.id}
+          locationId={integration.config?.location_id}
+          onFormsSelected={() => {
+            loadSelectedForms();
+            setShowFormSelection(false);
+          }}
+        />
+      )}
     </div>
   );
 }

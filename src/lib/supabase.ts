@@ -570,8 +570,58 @@ export const userService = {
       });
     }
 
-    // TODO: Add integration storage table for Pipedream integrations
-    // For now, this will only show webhook integrations
+    // Fetch GHL and other integrations from user_integrations table
+    const { data: userIntegrationsData, error: integrationsError } = await supabase
+      .from('user_integrations')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (!integrationsError && userIntegrationsData) {
+      for (const integration of userIntegrationsData) {
+        // Get submission count for this integration
+        let submissionCount = 0;
+        if (integration.type === 'ghl') {
+          // Count check-ins from GHL forms
+          const { data: formSelections } = await supabase
+            .from('ghl_form_selections')
+            .select('form_id')
+            .eq('integration_id', integration.id)
+            .eq('is_active', true);
+
+          if (formSelections && formSelections.length > 0) {
+            const formIds = formSelections.map(f => f.form_id);
+            const { count } = await supabase
+              .from('checkins')
+              .select('id', { count: 'exact' })
+              .eq('coach_id', effectiveCoachId)
+              .contains('raw_data', { source: 'ghl' });
+            
+            submissionCount = count || 0;
+          }
+        }
+
+        // Get last activity
+        const { data: lastCheckin } = await supabase
+          .from('checkins')
+          .select('date')
+          .eq('coach_id', effectiveCoachId)
+          .contains('raw_data', { source: integration.type })
+          .order('date', { ascending: false })
+          .limit(1);
+
+        integrations.push({
+          id: integration.id,
+          type: integration.type,
+          name: integration.name,
+          status: integration.status,
+          config: integration.config,
+          created_at: integration.created_at,
+          last_activity: lastCheckin?.[0]?.date || integration.updated_at,
+          total_submissions: submissionCount,
+        });
+      }
+    }
 
     console.log('✅ [getUserIntegrations] Retrieved integrations:', integrations.length);
     return integrations;

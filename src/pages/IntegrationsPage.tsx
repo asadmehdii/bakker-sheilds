@@ -7,7 +7,7 @@ import { userService } from '../lib/supabase';
 
 interface Integration {
   id: string;
-  type: 'typeform' | 'google_forms' | 'custom_webhook';
+  type: 'typeform' | 'google_forms' | 'custom_webhook' | 'ghl';
   name: string;
   status: 'connected' | 'disconnected' | 'pending';
   config: any;
@@ -19,13 +19,15 @@ interface Integration {
 const INTEGRATION_ICONS = {
   typeform: FileText,
   google_forms: Globe,
-  custom_webhook: Zap
+  custom_webhook: Zap,
+  ghl: Zap
 };
 
 const INTEGRATION_COLORS = {
   typeform: 'from-gray-600 to-gray-700',
   google_forms: 'from-blue-600 to-blue-700',
-  custom_webhook: 'from-purple-600 to-purple-700'
+  custom_webhook: 'from-purple-600 to-purple-700',
+  ghl: 'from-purple-600 to-indigo-700'
 };
 
 function IntegrationsPage() {
@@ -34,6 +36,7 @@ function IntegrationsPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
   // Load real user integrations
   useEffect(() => {
@@ -50,6 +53,18 @@ function IntegrationsPage() {
     };
 
     loadIntegrations();
+
+    // Check for OAuth success callback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      setShowSuccessMessage(true);
+      // Clear the URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Reload integrations to get the new GHL integration
+      setTimeout(() => loadIntegrations(), 500);
+      // Hide success message after 3 seconds
+      setTimeout(() => setShowSuccessMessage(false), 3000);
+    }
   }, []);
 
   const handleAddIntegration = async (newIntegration: Integration) => {
@@ -157,6 +172,17 @@ function IntegrationsPage() {
             </button>
           </div>
         </div>
+
+        {/* Success Message */}
+        {showSuccessMessage && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-3">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+            <div>
+              <p className="font-medium text-green-800">Integration Connected Successfully!</p>
+              <p className="text-sm text-green-700">You can now select forms to monitor in your integration settings.</p>
+            </div>
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

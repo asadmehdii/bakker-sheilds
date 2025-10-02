@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Webhook, Shield, ExternalLink, LogOut, Copy, RefreshCw } from 'lucide-react';
-import { checkinWebhookService, supabase } from '../lib/supabase';
+import { checkinWebhookService, supabase, supabaseUrl } from '../lib/supabase';
 
 interface CheckinWebhookSettingsModalProps {
   isOpen: boolean;
@@ -28,8 +28,9 @@ const CheckinWebhookSettingsModal: React.FC<CheckinWebhookSettingsModalProps> = 
   const [newClientEngagement, setNewClientEngagement] = useState<'low' | 'medium' | 'high'>('medium');
 
   // Generate webhook URL with user ID and token
+  // Use production Supabase URL for webhooks (not localhost)
   const webhookUrl = currentUserId && webhookToken 
-    ? `${window.location.origin}/webhook-checkin/${currentUserId}/${webhookToken}`
+    ? `${supabaseUrl}/functions/v1/webhook-checkin/${currentUserId}/${webhookToken}`
     : currentUserId 
       ? 'Click "Generate Webhook URL" to create your unique webhook link'
       : 'Loading user information...';
