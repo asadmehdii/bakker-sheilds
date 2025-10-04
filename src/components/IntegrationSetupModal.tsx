@@ -284,7 +284,7 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
       }
 
       // Build GHL OAuth URL
-      const authUrl = new URL('https://marketplace.gohighlevel.com/oauth/chooselocation');
+      const authUrl = new URL('https://marketplace.leadconnectorhq.com/oauth/chooselocation');
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', ghlClientId);
       authUrl.searchParams.set('redirect_uri', ghlRedirectUri);
