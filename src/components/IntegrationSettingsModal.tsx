@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase, teamService } from '../lib/supabase';
 import { X, Settings, ExternalLink, Trash2, Copy, Eye, EyeOff } from 'lucide-react';
 
 interface Integration {
@@ -43,6 +44,28 @@ function IntegrationSettingsModal({
     
     setIsSaving(true);
     try {
+      if (editedIntegration.type === 'custom_webhook') {
+        // Update the name in webhook settings
+        const effectiveCoachId = await teamService.getEffectiveCoachId();
+        if (effectiveCoachId) {
+          await supabase
+            .from('user_checkin_webhook_settings')
+            .update({ integration_name: editedIntegration.name, updated_at: new Date().toISOString() })
+            .eq('user_id', effectiveCoachId);
+        }
+      } else {
+        // Persist updates for user_integrations
+        await supabase
+          .from('user_integrations')
+          .update({
+            name: editedIntegration.name,
+            status: editedIntegration.status,
+            config: editedIntegration.config,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editedIntegration.id);
+      }
+
       onSave(editedIntegration);
       onClose();
     } catch (error) {
@@ -61,6 +84,22 @@ function IntegrationSettingsModal({
 
     setIsDeleting(true);
     try {
+      // Delete from backend
+      if (integration.type === 'custom_webhook') {
+        const effectiveCoachId = await teamService.getEffectiveCoachId();
+        if (effectiveCoachId) {
+          await supabase
+            .from('user_checkin_webhook_settings')
+            .delete()
+            .eq('user_id', effectiveCoachId);
+        }
+      } else {
+        await supabase
+          .from('user_integrations')
+          .delete()
+          .eq('id', integration.id);
+      }
+
       onDelete(integration.id);
       onClose();
     } catch (error) {

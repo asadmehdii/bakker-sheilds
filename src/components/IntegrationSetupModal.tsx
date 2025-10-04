@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Zap, Globe, FileText, Settings, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Zap, Globe, FileText, Check, ExternalLink } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { userService, supabase } from '../lib/supabase';
 
@@ -55,6 +55,10 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
 
   // Get webhook URL for current user
   useEffect(() => {
+    // Clear name on open
+    if (isOpen) {
+      setIntegrationName('');
+    }
     if (isOpen && user) {
       setIsLoadingWebhook(true);
       userService.getUserWebhookUrl()
@@ -73,6 +77,16 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         });
     }
   }, [isOpen, user]);
+
+  // Reset default name when switching integration types
+  useEffect(() => {
+    if (!selectedType) return;
+    const defaultName = `${INTEGRATION_TYPES.find(t => t.id === selectedType)?.name}`;
+    // If the current name is empty or from other type, replace it
+    if (!integrationName || !integrationName.toLowerCase().includes(defaultName.toLowerCase())) {
+      setIntegrationName(`${defaultName} Integration`);
+    }
+  }, [selectedType]);
 
   const handlePipedreamConnect = async (integrationType: string) => {
     setIsConnecting(true);
@@ -99,6 +113,16 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
 
       const { connect_url, integration_id } = setupData;
 
+      // Immediately reflect a pending integration in UI
+      onSave({
+        id: integration_id,
+        type: integrationType as any,
+        name: integrationName || `${INTEGRATION_TYPES.find(t => t.id === integrationType)?.name} Integration`,
+        status: 'pending',
+        config: { webhook_url: webhookUrl },
+        created_at: new Date().toISOString()
+      });
+
       // Step 2: Open Pipedream Connect auth flow in popup
       const popup = window.open(
         connect_url,
@@ -111,9 +135,50 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         return;
       }
 
-      // Poll for integration status updates since Pipedream uses webhooks
+      // Listen for callback message to update immediately
+      const refreshIntegration = async () => {
+        const { data } = await supabase
+          .from('user_integrations')
+          .select('*')
+          .eq('id', integration_id)
+          .single();
+        return data;
+      };
+
+      const onMessage = async (event: MessageEvent) => {
+        if (event?.data?.type === 'pipedream-connect-success') {
+          try {
+            // Refresh, only mark connected if backend shows connected
+            let data = await refreshIntegration();
+
+            const integration: Integration = {
+              id: integration_id,
+              type: integrationType as any,
+              name: integrationName || `${INTEGRATION_TYPES.find(t => t.id === integrationType)?.name} Integration`,
+              status: (data?.status as any) || 'pending',
+              config: data?.config || {},
+              created_at: data?.created_at
+            };
+
+            if (data && data.status === 'connected') {
+              onSave(integration);
+              window.removeEventListener('message', onMessage);
+              popup?.close();
+              onClose();
+            } else {
+              // Keep modal open; let polling or realtime flip it
+              onSave(integration);
+            }
+          } catch (e) {
+            console.error('Error handling connect success message:', e);
+          }
+        }
+      };
+      window.addEventListener('message', onMessage);
+
+      // Poll for integration status updates since Pipedream uses webhooks (fallback)
       let pollCount = 0;
-      const maxPolls = 60; // Poll for 5 minutes max (60 * 5 seconds)
+      const maxPolls = 150; // 5 minutes at 2s interval
       
       const pollForCompletion = setInterval(async () => {
         pollCount++;
@@ -121,7 +186,10 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         // Check if popup was closed manually
         if (popup.closed) {
           clearInterval(pollForCompletion);
+          window.removeEventListener('message', onMessage);
           setIsConnecting(false);
+          // Close the modal when popup is closed; list already shows pending item
+          onClose();
           return;
         }
 
@@ -129,6 +197,7 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         if (pollCount >= maxPolls) {
           clearInterval(pollForCompletion);
           popup.close();
+          window.removeEventListener('message', onMessage);
           setIsConnecting(false);
           
           // TEMPORARY: Since Pipedream webhooks aren't working in development,
@@ -210,7 +279,7 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         } catch (error) {
           console.error('Error during polling:', error);
         }
-      }, 5000); // Poll every 5 seconds
+      }, 2000); // Poll every 2 seconds
       
     } catch (error) {
       console.error('Error initiating Pipedream Connect:', error);
@@ -288,7 +357,10 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
                   return (
                     <button
                       key={integration.id}
-                      onClick={() => setSelectedType(integration.id)}
+                      onClick={() => {
+                        setSelectedType(integration.id);
+                        setIsConnecting(false);
+                      }}
                       className="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all group text-left"
                     >
                       <div className={`p-3 bg-gradient-to-r ${integration.color} rounded-lg mr-4`}>

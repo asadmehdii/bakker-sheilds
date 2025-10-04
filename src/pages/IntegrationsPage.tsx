@@ -3,7 +3,7 @@ import { Plus, Settings, Trash2, ExternalLink, AlertCircle, CheckCircle, Clock, 
 import IntegrationSetupModal from '../components/IntegrationSetupModal';
 import IntegrationSettingsModal from '../components/IntegrationSettingsModal';
 import Navigation from '../components/Navigation';
-import { userService } from '../lib/supabase';
+import { userService, supabase } from '../lib/supabase';
 
 interface Integration {
   id: string;
@@ -50,20 +50,54 @@ function IntegrationsPage() {
     };
 
     loadIntegrations();
+    
+    // Realtime updates: listen for changes to user_integrations and webhook settings
+    const integrationsChannel = supabase
+      .channel('user-integrations-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_integrations' }, () => {
+        userService.getUserIntegrations().then(setIntegrations).catch(console.error);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_checkin_webhook_settings' }, () => {
+        userService.getUserIntegrations().then(setIntegrations).catch(console.error);
+      })
+      .subscribe();
+
+    // Listen for popup callback postMessage to refresh immediately
+    const handleMessage = (event: MessageEvent) => {
+      if (event?.data?.type === 'pipedream-connect-success') {
+        userService.getUserIntegrations().then(setIntegrations).catch(console.error);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      supabase.removeChannel(integrationsChannel);
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   const handleAddIntegration = async (newIntegration: Integration) => {
-    // Add the integration temporarily for immediate UI feedback
-    setIntegrations(prev => [...prev, { 
-      ...newIntegration, 
-      created_at: new Date().toISOString(),
-      total_submissions: 0
-    }]);
+    // Add/replace the integration temporarily for immediate UI feedback
+    setIntegrations(prev => {
+      const next = [...prev];
+      const idx = next.findIndex(i => i.id === newIntegration.id);
+      const prepared = {
+        ...newIntegration,
+        created_at: newIntegration.created_at || new Date().toISOString(),
+        total_submissions: newIntegration.total_submissions ?? 0
+      } as Integration;
+      if (idx >= 0) next[idx] = prepared; else next.push(prepared);
+      // De-dupe by id just in case
+      const seen = new Set<string>();
+      return next.filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true)));
+    });
 
     // Refresh the integrations list to get the latest data
     try {
       const userIntegrations = await userService.getUserIntegrations();
-      setIntegrations(userIntegrations);
+      // De-dupe by id when refreshing
+      const seen = new Set<string>();
+      setIntegrations(userIntegrations.filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true))));
     } catch (error) {
       console.error('Error refreshing integrations:', error);
     }

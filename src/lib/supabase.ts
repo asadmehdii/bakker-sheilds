@@ -570,8 +570,31 @@ export const userService = {
       });
     }
 
-    // TODO: Add integration storage table for Pipedream integrations
-    // For now, this will only show webhook integrations
+    // Load Typeform & Google Forms integrations from user_integrations table
+    try {
+      const { data: pipedreamIntegrations, error: pdError } = await supabase
+        .from('user_integrations')
+        .select('*')
+        .eq('user_id', effectiveCoachId)
+        .in('type', ['typeform', 'google_forms']);
+
+      if (!pdError && pipedreamIntegrations && pipedreamIntegrations.length > 0) {
+        pipedreamIntegrations.forEach((row: any) => {
+          integrations.push({
+            id: row.id,
+            type: row.type,
+            name: row.name || `${row.type} Integration`,
+            status: row.status || 'pending',
+            config: row.config || {},
+            created_at: row.created_at,
+            last_activity: row.updated_at,
+            total_submissions: undefined
+          });
+        });
+      }
+    } catch (e) {
+      console.error('Error loading Pipedream integrations:', e);
+    }
 
     console.log('✅ [getUserIntegrations] Retrieved integrations:', integrations.length);
     return integrations;

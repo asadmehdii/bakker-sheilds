@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Plus, Search, TrendingUp, TrendingDown, Minus, Calendar, MessageSquare, Clock, Filter, Bell } from 'lucide-react';
+import { Users, Plus, Search, TrendingUp, TrendingDown, Minus, MessageSquare, Filter, Bell } from 'lucide-react';
 import { clientService, checkinService, supabase, type Client } from '../lib/supabase';
 import Navigation from '../components/Navigation';
 
@@ -33,6 +33,14 @@ function ClientsDashboard() {
         (payload) => {
           console.log('Client change detected:', payload);
           // Only reload if it affects the current user's clients
+          loadClients();
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'checkins' },
+        (payload) => {
+          console.log('Checkin change detected:', payload);
+          loadPendingCheckinsCount();
           loadClients();
         }
       )
