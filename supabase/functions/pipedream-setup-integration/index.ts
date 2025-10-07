@@ -76,7 +76,9 @@ serve(async (req) => {
       hasClientId: !!pipedreamClientId,
       hasClientSecret: !!pipedreamClientSecret,
       hasProjectId: !!pipedreamProjectId,
-      environment: pipedreamEnvironment
+      environment: pipedreamEnvironment,
+      PIPEDREAM_ENVIRONMENT_env_var: Deno.env.get('PIPEDREAM_ENVIRONMENT'),
+      defaulting_to_production: !Deno.env.get('PIPEDREAM_ENVIRONMENT')
     });
 
     if (!pipedreamClientId || !pipedreamClientSecret || !pipedreamProjectId) {
@@ -248,6 +250,14 @@ serve(async (req) => {
 
     // Store integration metadata in database
     const integration_id = crypto.randomUUID();
+    console.log('Storing integration with token:', { 
+      integration_id, 
+      token, 
+      user_id, 
+      type: integration_type,
+      webhook_url 
+    });
+    
     const { error: insertError } = await supabase
       .from('user_integrations')
       .insert({
@@ -266,6 +276,8 @@ serve(async (req) => {
     if (insertError) {
       console.error('Failed to store integration:', insertError);
       // Continue anyway - the integration can still work without DB storage
+    } else {
+      console.log('Successfully stored integration in database:', integration_id);
     }
 
     return new Response(
