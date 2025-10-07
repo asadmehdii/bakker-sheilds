@@ -468,21 +468,19 @@ export const userService = {
       const existingSettings = await checkinWebhookService.getUserCheckinWebhookSettings();
       
       if (existingSettings && existingSettings.webhook_secret) {
-        // Update the integration name if provided and settings exist
-        if (integrationName) {
-          const { error } = await supabase
-            .from('user_checkin_webhook_settings')
-            .update({
-              integration_name: integrationName,
-              is_active: true,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', user.id);
-            
-          if (error) {
-            console.error('Error updating webhook settings:', error);
-            return { error };
-          }
+        // Update settings if needed
+        const { error } = await supabase
+          .from('user_checkin_webhook_settings')
+          .update({
+            integration_name: integrationName || 'custom',
+            is_active: true,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id);
+          
+        if (error) {
+          console.error('Error updating webhook settings:', error);
+          return { error };
         }
         
         return {}; // Success - settings already exist
@@ -495,7 +493,7 @@ export const userService = {
           .upsert({
             user_id: user.id,
             webhook_secret: newToken,
-            integration_name: integrationName || 'Webhook Integration',
+            integration_name: integrationName || 'custom',
             is_active: true,
             primary_identifier: 'phone',
             fallback_identifier: 'email',
@@ -556,7 +554,11 @@ export const userService = {
       integrations.push({
         id: 'webhook-' + user.id,
         type: 'custom_webhook',
-        name: webhookSettings.integration_name || 'Webhook Integration',
+        name: webhookSettings.integration_name === 'custom' ? 'Custom Webhook Integration' : 
+              webhookSettings.integration_name === 'typeform' ? 'Typeform Integration' :
+              webhookSettings.integration_name === 'jotform' ? 'Jotform Integration' :
+              webhookSettings.integration_name === 'pipedrive' ? 'Pipedrive Integration' :
+              'Custom Webhook Integration',
         status: 'connected',
         config: {
           webhook_url: webhookUrl,

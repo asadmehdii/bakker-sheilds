@@ -321,7 +321,17 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
       // Ensure webhook settings exist in database
       // The getUserWebhookUrl function should have already created them,
       // but let's make sure they're active and properly configured
-      const { error } = await userService.ensureWebhookSettingsExist(integrationName || 'Custom Webhook Integration');
+      // Map integration type to the correct name for database storage
+      const integrationTypeMap = {
+        'custom_webhook': 'custom',
+        'typeform': 'typeform', 
+        'google_forms': 'typeform', // Google Forms also use typeform integration
+        'jotform': 'jotform',
+        'pipedrive': 'pipedrive'
+      };
+      
+      const dbIntegrationName = integrationTypeMap[selectedType as keyof typeof integrationTypeMap] || 'custom';
+      const { error } = await userService.ensureWebhookSettingsExist(dbIntegrationName);
       
       if (error) {
         console.error('Error ensuring webhook settings:', error);
