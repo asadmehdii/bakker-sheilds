@@ -625,6 +625,131 @@ export const userService = {
 
     console.log('✅ [getUserIntegrations] Retrieved integrations:', integrations.length);
     return integrations;
+  },
+
+  // Delete an integration directly from database
+  async deleteIntegration(integrationId: string): Promise<{ success: boolean; error?: string }> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.log('⚠️ [deleteIntegration] No authenticated user found');
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    try {
+      console.log(`🗑️ [deleteIntegration] Deleting integration ${integrationId} for user ${user.id}`);
+
+      // First, check if integration exists and belongs to user
+      const { data: existingIntegration, error: fetchError } = await supabase
+        .from('user_integrations')
+        .select('*')
+        .eq('id', integrationId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError || !existingIntegration) {
+        console.log(`❌ [deleteIntegration] Integration not found or access denied:`, fetchError);
+        return { success: false, error: 'Integration not found or access denied' };
+      }
+
+      console.log(`✅ [deleteIntegration] Found integration:`, existingIntegration.name);
+
+      // Delete related GHL form selections if this is a GHL integration
+      if (existingIntegration.type === 'ghl') {
+        console.log(`🧹 [deleteIntegration] Cleaning up GHL form selections for integration ${integrationId}`);
+        const { error: formSelectionsError } = await supabase
+          .from('ghl_form_selections')
+          .delete()
+          .eq('integration_id', integrationId);
+
+        if (formSelectionsError) {
+          console.error('⚠️ [deleteIntegration] Error deleting GHL form selections:', formSelectionsError);
+          // Continue with integration deletion even if form selections cleanup fails
+        }
+      }
+
+      // Delete the integration
+      const { error: deleteError } = await supabase
+        .from('user_integrations')
+        .delete()
+        .eq('id', integrationId)
+        .eq('user_id', user.id);
+
+      if (deleteError) {
+        console.error('❌ [deleteIntegration] Error deleting integration:', deleteError);
+        return { success: false, error: 'Failed to delete integration' };
+      }
+
+      console.log(`✅ [deleteIntegration] Successfully deleted integration ${integrationId}`);
+      return { success: true };
+
+    } catch (error) {
+      console.error('❌ [deleteIntegration] Unexpected error:', error);
+      return { success: false, error: 'An unexpected error occurred' };
+    }
+  },
+
+  // Update an integration
+  async updateIntegration(integrationId: string, updates: { name?: string; config?: any }): Promise<{ success: boolean; error?: string; integration?: any }> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.log('⚠️ [updateIntegration] No authenticated user found');
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    try {
+      console.log(`✏️ [updateIntegration] Updating integration ${integrationId} for user ${user.id}`, updates);
+
+      // First, check if integration exists and belongs to user
+      const { data: existingIntegration, error: fetchError } = await supabase
+        .from('user_integrations')
+        .select('*')
+        .eq('id', integrationId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError || !existingIntegration) {
+        console.log(`❌ [updateIntegration] Integration not found or access denied:`, fetchError);
+        return { success: false, error: 'Integration not found or access denied' };
+      }
+
+      console.log(`✅ [updateIntegration] Found integration:`, existingIntegration.name);
+
+      // Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.name) {
+        updateData.name = updates.name;
+      }
+
+      if (updates.config) {
+        updateData.config = { ...existingIntegration.config, ...updates.config };
+      }
+
+      // Update the integration
+      const { data: updatedIntegration, error: updateError } = await supabase
+        .from('user_integrations')
+        .update(updateData)
+        .eq('id', integrationId)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('❌ [updateIntegration] Error updating integration:', updateError);
+        return { success: false, error: 'Failed to update integration' };
+      }
+
+      console.log(`✅ [updateIntegration] Successfully updated integration ${integrationId}`);
+      return { success: true, integration: updatedIntegration };
+
+    } catch (error) {
+      console.error('❌ [updateIntegration] Unexpected error:', error);
+      return { success: false, error: 'An unexpected error occurred' };
+    }
   }
 };
 

@@ -18,8 +18,8 @@ interface IntegrationSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   integration: Integration | null;
-  onSave: (integration: Integration) => void;
-  onDelete: (integrationId: string) => void;
+  onSave: (integration: Integration) => Promise<void>;
+  onDelete: (integrationId: string) => Promise<void>;
 }
 
 function IntegrationSettingsModal({ 
@@ -69,7 +69,7 @@ function IntegrationSettingsModal({
     
     setIsSaving(true);
     try {
-      onSave(editedIntegration);
+      await onSave(editedIntegration);
       onClose();
     } catch (error) {
       console.error('Error saving integration:', error);
@@ -87,7 +87,7 @@ function IntegrationSettingsModal({
 
     setIsDeleting(true);
     try {
-      onDelete(integration.id);
+      await onDelete(integration.id);
       onClose();
     } catch (error) {
       console.error('Error deleting integration:', error);

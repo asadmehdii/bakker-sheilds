@@ -84,8 +84,24 @@ function IntegrationsPage() {
     }
   };
 
-  const handleDeleteIntegration = (integrationId: string) => {
-    setIntegrations(prev => prev.filter(i => i.id !== integrationId));
+  const handleDeleteIntegration = async (integrationId: string) => {
+    try {
+      // Call the backend API to delete the integration
+      const result = await userService.deleteIntegration(integrationId);
+      
+      if (result.success) {
+        // Remove from local state only after successful backend deletion
+        setIntegrations(prev => prev.filter(i => i.id !== integrationId));
+        console.log('✅ Integration deleted successfully');
+      } else {
+        console.error('❌ Failed to delete integration:', result.error);
+        // You could show a toast notification here
+        alert(`Failed to delete integration: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error deleting integration:', error);
+      alert('An unexpected error occurred while deleting the integration');
+    }
   };
 
   const handleOpenSettings = (integration: Integration) => {
@@ -93,10 +109,33 @@ function IntegrationsPage() {
     setIsSettingsModalOpen(true);
   };
 
-  const handleUpdateIntegration = (updatedIntegration: Integration) => {
-    setIntegrations(prev => 
-      prev.map(i => i.id === updatedIntegration.id ? updatedIntegration : i)
-    );
+  const handleUpdateIntegration = async (updatedIntegration: Integration) => {
+    try {
+      // Call the backend API to update the integration
+      const result = await userService.updateIntegration(updatedIntegration.id, {
+        name: updatedIntegration.name,
+        config: updatedIntegration.config
+      });
+      
+      if (result.success && result.integration) {
+        // Update local state with the backend response
+        setIntegrations(prev => 
+          prev.map(i => i.id === updatedIntegration.id ? {
+            ...i,
+            name: result.integration.name,
+            config: result.integration.config,
+            updated_at: result.integration.updated_at
+          } : i)
+        );
+        console.log('✅ Integration updated successfully');
+      } else {
+        console.error('❌ Failed to update integration:', result.error);
+        alert(`Failed to update integration: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error updating integration:', error);
+      alert('An unexpected error occurred while updating the integration');
+    }
   };
 
   const getStatusIcon = (status: string) => {

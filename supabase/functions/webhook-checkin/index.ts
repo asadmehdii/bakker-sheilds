@@ -134,40 +134,68 @@ serve(async (req) => {
     console.log('✅ [Webhook] Token verified for user:', userId)
 
     // Extract contact information with intelligent fallbacks
-    const extractContactInfo = (payload: any) => {
-      // Try to extract client_name
-      let clientName = ''
-      if (payload.contact?.name) {
-        clientName = payload.contact.name
-      } else if (payload.contact?.firstName || payload.contact?.lastName) {
-        clientName = `${payload.contact.firstName || ''} ${payload.contact.lastName || ''}`.trim()
-      } else if (payload.name) {
-        clientName = payload.name
-      } else if (payload.client_name) {
-        clientName = payload.client_name
-      } else if (payload.firstName || payload.lastName) {
-        clientName = `${payload.firstName || ''} ${payload.lastName || ''}`.trim()
-      }
+   // Extract contact information with intelligent fallbacks
+const extractContactInfo = (payload: any) => {
+  console.log('🔍 [Webhook] Raw payload for extraction:', JSON.stringify(payload, null, 2))
+  
+  // Try to extract client_name - CHECK ALL POSSIBLE FIELDS
+  let clientName = ''
+  
+  // Priority 1: Direct client_name field
+  if (payload.client_name && typeof payload.client_name === 'string' && payload.client_name.trim()) {
+    clientName = payload.client_name.trim()
+    console.log('✅ [Webhook] Found client_name:', clientName)
+  }
+  // Priority 2: contact.name
+  else if (payload.contact?.name && typeof payload.contact.name === 'string' && payload.contact.name.trim()) {
+    clientName = payload.contact.name.trim()
+    console.log('✅ [Webhook] Found contact.name:', clientName)
+  }
+  // Priority 3: firstName + lastName combination
+  else if (payload.firstName || payload.lastName) {
+    clientName = `${payload.firstName || ''} ${payload.lastName || ''}`.trim()
+    console.log('✅ [Webhook] Built from firstName/lastName:', clientName)
+  }
+  // Priority 4: contact.firstName + contact.lastName
+  else if (payload.contact?.firstName || payload.contact?.lastName) {
+    clientName = `${payload.contact.firstName || ''} ${payload.contact.lastName || ''}`.trim()
+    console.log('✅ [Webhook] Built from contact.firstName/lastName:', clientName)
+  }
+  // Priority 5: Just "name"
+  else if (payload.name && typeof payload.name === 'string' && payload.name.trim()) {
+    clientName = payload.name.trim()
+    console.log('✅ [Webhook] Found name:', clientName)
+  }
 
-      // Try to extract client_id - validate it's a proper UUID format
-      let clientId = payload.contact?.id || payload.contact_id || payload.client_id || null
-      
-      // Validate UUID format (8-4-4-4-12 characters)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      if (clientId && !uuidRegex.test(clientId)) {
-        console.log(`⚠️ [Webhook] Invalid UUID format for client_id: ${clientId}, setting to null`)
-        clientId = null
-      }
+  // Try to extract client_id - validate it's a proper UUID format
+  let clientId = payload.contact?.id || payload.contact_id || payload.client_id || null
+  
+  // Validate UUID format (8-4-4-4-12 characters)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (clientId && !uuidRegex.test(clientId)) {
+    console.log(`⚠️ [Webhook] Invalid UUID format for client_id: ${clientId}, setting to null`)
+    clientId = null
+  }
 
-      // Try to extract email
-      const email = payload.contact?.email || payload.email || null
+  // Try to extract email - CHECK ALL POSSIBLE LOCATIONS
+  let email = null
+  if (payload.email && typeof payload.email === 'string' && payload.email.trim()) {
+    email = payload.email.trim()
+  } else if (payload.contact?.email && typeof payload.contact.email === 'string' && payload.contact.email.trim()) {
+    email = payload.contact.email.trim()
+  }
 
-      // Try to extract phone
-      const phone = payload.contact?.phone || payload.phone || null
+  // Try to extract phone - CHECK ALL POSSIBLE LOCATIONS
+  let phone = null
+  if (payload.phone && typeof payload.phone === 'string' && payload.phone.trim()) {
+    phone = payload.phone.trim()
+  } else if (payload.contact?.phone && typeof payload.contact.phone === 'string' && payload.contact.phone.trim()) {
+    phone = payload.contact.phone.trim()
+  }
 
-      return { clientName, clientId, email, phone }
-    }
-
+  console.log('📋 [Webhook] Extracted:', { clientName, clientId, email, phone })
+  return { clientName, clientId, email, phone }
+}
     const { clientName, clientId, email, phone } = extractContactInfo(payload)
 
     // Validate that we have at least a client name
@@ -293,125 +321,142 @@ serve(async (req) => {
       return phone.replace(/[^\d+]/g, '').replace(/^\+?1?/, '') // Remove US country code
     }
 
-    // Find or create client using configurable matching strategy
-    const findOrCreateClient = async () => {
-      // First, get the coach's webhook settings for client matching preferences
-      const { data: webhookSettings, error: settingsError } = await supabase
-        .from('user_checkin_webhook_settings')
-        .select('primary_identifier, fallback_identifier, auto_create_clients, new_client_status, new_client_engagement')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .single()
 
-      if (settingsError) {
-        console.error('❌ [Webhook] Failed to get webhook settings:', settingsError)
-        // Use defaults if settings can't be retrieved
-        var primary_identifier = 'phone'
-        var fallback_identifier = 'email'
-        var auto_create_clients = true
-        var new_client_status = 'active'
-        var new_client_engagement = 'medium'
-      } else {
-        var { primary_identifier, fallback_identifier, auto_create_clients, new_client_status, new_client_engagement } = webhookSettings
-      }
+const findOrCreateClient = async () => {
+  // First, get the coach's webhook settings for client matching preferences
+  const { data: webhookSettings, error: settingsError } = await supabase
+    .from('user_checkin_webhook_settings')
+    .select('primary_identifier, fallback_identifier, auto_create_clients, new_client_status, new_client_engagement')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .single()
 
-      console.log('🔍 [Webhook] Using matching strategy:', { primary_identifier, fallback_identifier, auto_create_clients })
+  let primary_identifier = 'email'
+  let fallback_identifier = 'phone'
+  let auto_create_clients = true
+  let new_client_status = 'active'
+  let new_client_engagement = 'medium'
 
-      // Normalize phone for reliable matching
-      const normalizedPhone = normalizePhone(phone)
-      const normalizedEmail = email?.toLowerCase().trim()
+  if (!settingsError && webhookSettings) {
+    primary_identifier = webhookSettings.primary_identifier || 'email'
+    fallback_identifier = webhookSettings.fallback_identifier || 'phone'
+    auto_create_clients = webhookSettings.auto_create_clients !== false
+    new_client_status = webhookSettings.new_client_status || 'active'
+    new_client_engagement = webhookSettings.new_client_engagement || 'medium'
+  } else {
+    console.log('⚠️ [Webhook] Using default webhook settings')
+  }
 
-      // Helper function to find client by phone
-      const findByPhone = async (phoneNumber: string) => {
-        const { data: client } = await supabase
-          .from('clients')
-          .select('id, full_name, phone')
-          .eq('coach_id', userId)
-          .eq('phone', phoneNumber)
-          .single()
-        return client
-      }
+  console.log('🔍 [Webhook] Using matching strategy:', { primary_identifier, fallback_identifier, auto_create_clients })
 
-      // Helper function to find client by email
-      const findByEmail = async (emailAddress: string) => {
-        const { data: client } = await supabase
-          .from('clients')
-          .select('id, full_name, email')
-          .eq('coach_id', userId)
-          .eq('email', emailAddress)
-          .single()
-        return client
-      }
+  // Normalize identifiers
+  const normalizedPhone = normalizePhone(phone)
+  let normalizedEmail = email?.toLowerCase().trim()
 
-      // Try primary identifier first
-      let matchedClient = null
-      if (primary_identifier === 'phone' && normalizedPhone) {
-        matchedClient = await findByPhone(normalizedPhone)
-        if (matchedClient) {
-          console.log('✅ [Webhook] Found client by phone (primary):', matchedClient.full_name)
-          return matchedClient.id
-        }
-      } else if (primary_identifier === 'email' && normalizedEmail) {
-        matchedClient = await findByEmail(normalizedEmail)
-        if (matchedClient) {
-          console.log('✅ [Webhook] Found client by email (primary):', matchedClient.full_name)
-          return matchedClient.id
-        }
-      }
+  // Generate email if missing (for client creation)
+  if (!normalizedEmail) {
+    normalizedEmail = `webhook-${userId.substring(0, 8)}-${Date.now()}@generated.local`
+    console.log('⚠️ [Webhook] No email provided, generated:', normalizedEmail)
+  }
 
-      // Try fallback identifier if primary didn't match
-      if (fallback_identifier && fallback_identifier !== 'none' && fallback_identifier !== primary_identifier) {
-        if (fallback_identifier === 'phone' && normalizedPhone) {
-          matchedClient = await findByPhone(normalizedPhone)
-          if (matchedClient) {
-            console.log('✅ [Webhook] Found client by phone (fallback):', matchedClient.full_name)
-            return matchedClient.id
-          }
-        } else if (fallback_identifier === 'email' && normalizedEmail) {
-          matchedClient = await findByEmail(normalizedEmail)
-          if (matchedClient) {
-            console.log('✅ [Webhook] Found client by email (fallback):', matchedClient.full_name)
-            return matchedClient.id
-          }
-        }
-      }
+  // Helper function to find client by phone
+  const findByPhone = async (phoneNumber: string) => {
+    if (!phoneNumber) return null
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id, full_name, phone')
+      .eq('coach_id', userId)
+      .eq('phone', phoneNumber)
+      .maybeSingle() // Use maybeSingle instead of single to avoid errors
+    return client
+  }
 
-      // No existing client found - check if we should auto-create
-      if (!auto_create_clients) {
-        throw new Error(`No existing client found and auto-creation is disabled. Phone: ${normalizedPhone}, Email: ${normalizedEmail}`)
-      }
+  // Helper function to find client by email
+  const findByEmail = async (emailAddress: string) => {
+    if (!emailAddress || emailAddress.includes('@generated.local')) return null
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id, full_name, email')
+      .eq('coach_id', userId)
+      .eq('email', emailAddress)
+      .maybeSingle() // Use maybeSingle instead of single to avoid errors
+    return client
+  }
 
-      // Verify we have at least one identifier to create a client
-      if (!normalizedPhone && !normalizedEmail) {
-        throw new Error('Cannot create client without phone number or email address')
-      }
-
-      // Create new client
-      console.log('🆕 [Webhook] Creating new client:', clientName)
-      const { data: newClient, error: clientError } = await supabase
-        .from('clients')
-        .insert({
-          coach_id: userId,
-          full_name: clientName,
-          email: normalizedEmail,
-          phone: normalizedPhone,
-          status: new_client_status,
-          engagement_level: new_client_engagement,
-          custom_fields: clientId ? { external_id: clientId } : {},
-          tags: ['webhook-created'],
-          onboarded_at: new Date().toISOString()
-        })
-        .select('id')
-        .single()
-
-      if (clientError) {
-        console.error('❌ [Webhook] Error creating client:', clientError)
-        throw new Error(`Failed to create client: ${clientError.message}`)
-      }
-
-      console.log('✅ [Webhook] Created new client with ID:', newClient.id)
-      return newClient.id
+  // Try primary identifier first
+  let matchedClient = null
+  if (primary_identifier === 'phone' && normalizedPhone) {
+    matchedClient = await findByPhone(normalizedPhone)
+    if (matchedClient) {
+      console.log('✅ [Webhook] Found client by phone (primary):', matchedClient.full_name)
+      return matchedClient.id
     }
+  } else if (primary_identifier === 'email' && email) {
+    matchedClient = await findByEmail(normalizedEmail)
+    if (matchedClient) {
+      console.log('✅ [Webhook] Found client by email (primary):', matchedClient.full_name)
+      return matchedClient.id
+    }
+  }
+
+  // Try fallback identifier if primary didn't match
+  if (fallback_identifier && fallback_identifier !== 'none' && fallback_identifier !== primary_identifier) {
+    if (fallback_identifier === 'phone' && normalizedPhone) {
+      matchedClient = await findByPhone(normalizedPhone)
+      if (matchedClient) {
+        console.log('✅ [Webhook] Found client by phone (fallback):', matchedClient.full_name)
+        return matchedClient.id
+      }
+    } else if (fallback_identifier === 'email' && email) {
+      matchedClient = await findByEmail(normalizedEmail)
+      if (matchedClient) {
+        console.log('✅ [Webhook] Found client by email (fallback):', matchedClient.full_name)
+        return matchedClient.id
+      }
+    }
+  }
+
+  // No existing client found - check if we should auto-create
+  if (!auto_create_clients) {
+    throw new Error(`No existing client found and auto-creation is disabled. Name: ${clientName}, Phone: ${normalizedPhone}, Email: ${email || 'none'}`)
+  }
+
+  // Create new client (email is now guaranteed to exist, even if generated)
+  console.log('🆕 [Webhook] Creating new client:', clientName)
+  
+  const clientData = {
+    coach_id: userId,
+    full_name: clientName,
+    email: normalizedEmail, // Always include (generated if needed)
+    phone: normalizedPhone || null,
+    status: new_client_status,
+    engagement_level: new_client_engagement,
+    custom_fields: clientId ? { external_id: clientId } : {},
+    tags: ['webhook-created'],
+    onboarded_at: new Date().toISOString()
+  }
+
+  console.log('📝 [Webhook] Creating client with data:', clientData)
+
+  const { data: newClient, error: clientError } = await supabase
+    .from('clients')
+    .insert(clientData)
+    .select('id')
+    .single()
+
+  if (clientError) {
+    console.error('❌ [Webhook] Error creating client:', clientError)
+    console.error('❌ [Webhook] Attempted data:', clientData)
+    throw new Error(`Failed to create client: ${clientError.message}`)
+  }
+
+  if (!newClient || !newClient.id) {
+    throw new Error('Client creation succeeded but no ID returned')
+  }
+
+  console.log('✅ [Webhook] Created new client with ID:', newClient.id)
+  return newClient.id
+}
 
     // Get the definitive client ID using smart matching
     let definitiveClientId: string
