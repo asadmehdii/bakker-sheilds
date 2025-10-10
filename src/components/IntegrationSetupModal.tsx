@@ -288,8 +288,8 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', ghlClientId);
       authUrl.searchParams.set('redirect_uri', ghlRedirectUri);
-      authUrl.searchParams.set('scope', 'contacts.readonly forms.readonly webhooks.write');
-      authUrl.searchParams.set('state', user.id); // Pass user ID as state
+      authUrl.searchParams.set('scope', 'contacts.readonly forms.readonly');    
+        authUrl.searchParams.set('state', user.id); // Pass user ID as state
 
       // Redirect to GHL OAuth
       window.location.href = authUrl.toString();
@@ -582,4 +582,4 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
   );
 }
 
-export default IntegrationSetupModal;
+export default IntegrationSetupModal
