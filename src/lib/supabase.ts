@@ -625,131 +625,6 @@ export const userService = {
 
     console.log('✅ [getUserIntegrations] Retrieved integrations:', integrations.length);
     return integrations;
-  },
-
-  // Delete an integration directly from database
-  async deleteIntegration(integrationId: string): Promise<{ success: boolean; error?: string }> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      console.log('⚠️ [deleteIntegration] No authenticated user found');
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    try {
-      console.log(`🗑️ [deleteIntegration] Deleting integration ${integrationId} for user ${user.id}`);
-
-      // First, check if integration exists and belongs to user
-      const { data: existingIntegration, error: fetchError } = await supabase
-        .from('user_integrations')
-        .select('*')
-        .eq('id', integrationId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (fetchError || !existingIntegration) {
-        console.log(`❌ [deleteIntegration] Integration not found or access denied:`, fetchError);
-        return { success: false, error: 'Integration not found or access denied' };
-      }
-
-      console.log(`✅ [deleteIntegration] Found integration:`, existingIntegration.name);
-
-      // Delete related GHL form selections if this is a GHL integration
-      if (existingIntegration.type === 'ghl') {
-        console.log(`🧹 [deleteIntegration] Cleaning up GHL form selections for integration ${integrationId}`);
-        const { error: formSelectionsError } = await supabase
-          .from('ghl_form_selections')
-          .delete()
-          .eq('integration_id', integrationId);
-
-        if (formSelectionsError) {
-          console.error('⚠️ [deleteIntegration] Error deleting GHL form selections:', formSelectionsError);
-          // Continue with integration deletion even if form selections cleanup fails
-        }
-      }
-
-      // Delete the integration
-      const { error: deleteError } = await supabase
-        .from('user_integrations')
-        .delete()
-        .eq('id', integrationId)
-        .eq('user_id', user.id);
-
-      if (deleteError) {
-        console.error('❌ [deleteIntegration] Error deleting integration:', deleteError);
-        return { success: false, error: 'Failed to delete integration' };
-      }
-
-      console.log(`✅ [deleteIntegration] Successfully deleted integration ${integrationId}`);
-      return { success: true };
-
-    } catch (error) {
-      console.error('❌ [deleteIntegration] Unexpected error:', error);
-      return { success: false, error: 'An unexpected error occurred' };
-    }
-  },
-
-  // Update an integration
-  async updateIntegration(integrationId: string, updates: { name?: string; config?: any }): Promise<{ success: boolean; error?: string; integration?: any }> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      console.log('⚠️ [updateIntegration] No authenticated user found');
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    try {
-      console.log(`✏️ [updateIntegration] Updating integration ${integrationId} for user ${user.id}`, updates);
-
-      // First, check if integration exists and belongs to user
-      const { data: existingIntegration, error: fetchError } = await supabase
-        .from('user_integrations')
-        .select('*')
-        .eq('id', integrationId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (fetchError || !existingIntegration) {
-        console.log(`❌ [updateIntegration] Integration not found or access denied:`, fetchError);
-        return { success: false, error: 'Integration not found or access denied' };
-      }
-
-      console.log(`✅ [updateIntegration] Found integration:`, existingIntegration.name);
-
-      // Prepare update data
-      const updateData: any = {
-        updated_at: new Date().toISOString()
-      };
-
-      if (updates.name) {
-        updateData.name = updates.name;
-      }
-
-      if (updates.config) {
-        updateData.config = { ...existingIntegration.config, ...updates.config };
-      }
-
-      // Update the integration
-      const { data: updatedIntegration, error: updateError } = await supabase
-        .from('user_integrations')
-        .update(updateData)
-        .eq('id', integrationId)
-        .eq('user_id', user.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error('❌ [updateIntegration] Error updating integration:', updateError);
-        return { success: false, error: 'Failed to update integration' };
-      }
-
-      console.log(`✅ [updateIntegration] Successfully updated integration ${integrationId}`);
-      return { success: true, integration: updatedIntegration };
-
-    } catch (error) {
-      console.error('❌ [updateIntegration] Unexpected error:', error);
-      return { success: false, error: 'An unexpected error occurred' };
-    }
   }
 };
 
@@ -1868,5 +1743,229 @@ export const logService = {
       timestamp: new Date().toISOString(),
       ...details
     }, 'frontend');
+  },
+
+  // Get user integrations
+  async getUserIntegrations(): Promise<Integration[]> {
+    console.log('🔍 [UserService] getUserIntegrations() called');
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('❌ [UserService] User not authenticated:', userError);
+      throw new Error('User not authenticated');
+    }
+
+    console.log('👤 [UserService] Current user ID:', user.id);
+
+    const { data: integrations, error } = await supabase
+      .from('user_integrations')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ [UserService] Database error:', error);
+      throw new Error(`Failed to fetch integrations: ${error.message}`);
+    }
+
+    console.log('📊 [UserService] Raw integrations from DB:', integrations);
+
+    // Get submission counts for each integration
+    const integrationsWithCounts = await Promise.all(
+      (integrations || []).map(async (integration) => {
+        let submissionCount = 0;
+        
+        if (integration.type === 'ghl') {
+          // For GHL, get count from checkins table
+          const { data: checkins, error: checkinsError } = await supabase
+            .from('checkins')
+            .select('id')
+            .eq('coach_id', user.id);
+          
+          if (!checkinsError && checkins) {
+            const ghlCheckins = checkins.filter(checkin => 
+              checkin.raw_data?.source === 'ghl'
+            );
+            submissionCount = ghlCheckins.length;
+          }
+        } else if (integration.type === 'typeform' || integration.type === 'google_forms') {
+          const { data: checkins, error: checkinsError } = await supabase
+            .from('checkins')
+            .select('id, raw_data')
+            .eq('coach_id', user.id);
+          
+          if (!checkinsError && checkins) {
+            const filteredCheckins = checkins.filter(checkin => 
+              checkin.raw_data?.source === integration.type
+            );
+            submissionCount = filteredCheckins.length;
+          }
+        }
+
+        return {
+          ...integration,
+          total_submissions: submissionCount,
+          last_activity: integration.updated_at
+        };
+      })
+    );
+
+    console.log('✅ [UserService] Final integrations with counts:', integrationsWithCounts);
+    return integrationsWithCounts;
+  },
+
+  // Get user webhook URL
+  async getUserWebhookUrl(): Promise<string | null> {
+    console.log('🔗 [UserService] getUserWebhookUrl() called');
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('❌ [UserService] User not authenticated:', userError);
+      throw new Error('User not authenticated');
+    }
+
+    console.log('👤 [UserService] Current user ID for webhook:', user.id);
+
+    const { data: webhookSettings, error } = await supabase
+      .from('user_checkin_webhook_settings')
+      .select('webhook_secret')
+      .eq('user_id', user.id)
+      .single();
+
+    if (error || !webhookSettings) {
+      console.error('❌ [UserService] No webhook settings found:', error);
+      return null;
+    }
+
+    const webhookUrl = `${supabaseUrl}/functions/v1/webhook-checkin/${user.id}/${webhookSettings.webhook_secret}`;
+    console.log('🔗 [UserService] Generated webhook URL:', webhookUrl);
+    
+    return webhookUrl;
+  },
+
+  // Ensure webhook settings exist
+  async ensureWebhookSettingsExist(integrationName: string): Promise<{ error?: string }> {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { error: 'User not authenticated' };
+    }
+
+    // Check if webhook settings already exist
+    const { data: existingSettings } = await supabase
+      .from('user_checkin_webhook_settings')
+      .select('id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (existingSettings) {
+      return {}; // Settings already exist
+    }
+
+    // Create webhook settings
+    const { error } = await supabase
+      .from('user_checkin_webhook_settings')
+      .insert({
+        user_id: user.id,
+        integration_name: integrationName.substring(0, 50), // Truncate to 50 chars
+        webhook_secret: crypto.randomUUID(),
+        client_matching_enabled: true,
+        auto_create_clients: true
+      });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return {};
+  },
+
+  // Create integration
+  async createIntegration(integrationData: {
+    type: string;
+    name: string;
+    config: any;
+  }): Promise<{ success: boolean; integration?: any; error?: string }> {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { data: integration, error } = await supabase
+      .from('user_integrations')
+      .insert({
+        user_id: user.id,
+        type: integrationData.type,
+        name: integrationData.name,
+        status: 'connected',
+        config: integrationData.config
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, integration };
+  },
+
+  // Delete integration
+  async deleteIntegration(integrationId: string): Promise<{ success: boolean; error?: string }> {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { error } = await supabase
+      .from('user_integrations')
+      .delete()
+      .eq('id', integrationId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  },
+
+  // Update integration
+  async updateIntegration(integrationId: string, updates: {
+    name?: string;
+    config?: any;
+  }): Promise<{ success: boolean; integration?: any; error?: string }> {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { data: integration, error } = await supabase
+      .from('user_integrations')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', integrationId)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, integration };
   }
 };
+
+// Integration interface
+export interface Integration {
+  id: string;
+  type: 'typeform' | 'google_forms' | 'custom_webhook' | 'ghl';
+  name: string;
+  status: 'connected' | 'disconnected' | 'pending';
+  config: any;
+  created_at?: string;
+  last_activity?: string;
+  total_submissions?: number;
+}

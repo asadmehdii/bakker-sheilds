@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Zap, Globe, FileText, Settings, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Zap, Globe, FileText, Check, ExternalLink } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { userService, supabase } from '../lib/supabase';
 
@@ -60,6 +60,16 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
   const [isConnecting, setIsConnecting] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
+
+  // Update integration name when type changes
+  useEffect(() => {
+    if (selectedType) {
+      const typeConfig = INTEGRATION_TYPES.find(t => t.id === selectedType);
+      if (typeConfig) {
+        setIntegrationName(typeConfig.name);
+      }
+    }
+  }, [selectedType]);
 
   // Get webhook URL for current user
   useEffect(() => {
@@ -238,7 +248,8 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
       // Ensure webhook settings exist in database
       // The getUserWebhookUrl function should have already created them,
       // but let's make sure they're active and properly configured
-      const { error } = await userService.ensureWebhookSettingsExist(integrationName || 'Custom Webhook Integration');
+      const webhookName = (integrationName || 'Webhook Integration').substring(0, 50);
+      const { error } = await userService.ensureWebhookSettingsExist(webhookName);
       
       if (error) {
         console.error('Error ensuring webhook settings:', error);
@@ -246,16 +257,28 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
         return;
       }
 
-      const integration: Integration = {
-        id: `custom-${Date.now()}`,
+      // Create the integration in the database using userService
+      const result = await userService.createIntegration({
         type: 'custom_webhook',
         name: integrationName || 'Custom Webhook Integration',
-        status: 'connected',
         config: {
           webhook_url: webhookUrl,
           setup_instructions: 'Send POST requests to the webhook URL with your form data',
           created_at: new Date().toISOString()
         }
+      });
+
+      if (!result.success || !result.integration) {
+        throw new Error(result.error || 'Failed to create integration');
+      }
+
+      const integration: Integration = {
+        id: result.integration.id,
+        type: 'custom_webhook',
+        name: result.integration.name,
+        status: 'connected',
+        config: result.integration.config,
+        created_at: result.integration.created_at
       };
       
       onSave(integration);
@@ -263,6 +286,58 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
     } catch (error) {
       console.error('Error saving custom webhook:', error);
       alert('Failed to save webhook integration. Please try again.');
+    }
+  };
+
+  const handleGoogleFormsSetup = async () => {
+    if (!user) {
+      console.error('User not authenticated');
+      return;
+    }
+
+    setIsConnecting(true);
+
+    try {
+      // Ensure webhook settings exist in database
+      const webhookName = (integrationName || 'Google Forms Integration').substring(0, 50);
+      const { error } = await userService.ensureWebhookSettingsExist(webhookName);
+      
+      if (error) {
+        console.error('Error ensuring webhook settings:', error);
+        alert('Failed to save Google Forms integration. Please try again.');
+        return;
+      }
+
+      // Create the integration in the database using userService
+      const result = await userService.createIntegration({
+        type: 'google_forms',
+        name: integrationName || 'Google Forms Integration',
+        config: {
+          setup_instructions: 'Update the webhook URL in your Pipedream workflow with your user-specific webhook URL',
+          created_at: new Date().toISOString()
+        }
+      });
+
+      if (!result.success || !result.integration) {
+        throw new Error(result.error || 'Failed to create integration');
+      }
+
+      const integration: Integration = {
+        id: result.integration.id,
+        type: 'google_forms',
+        name: result.integration.name,
+        status: 'connected',
+        config: result.integration.config,
+        created_at: result.integration.created_at
+      };
+      
+      onSave(integration);
+      onClose();
+    } catch (error) {
+      console.error('Error saving Google Forms integration:', error);
+      alert('Failed to save Google Forms integration. Please try again.');
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -423,6 +498,66 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
                     </div>
                   </div>
                 </div>
+              ) : selectedType === 'google_forms' ? (
+                /* Google Forms Setup */
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Google Forms Setup</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Integration Name
+                      </label>
+                      <input
+                        type="text"
+                        value={integrationName}
+                        onChange={(e) => setIntegrationName(e.target.value)}
+                        placeholder="Google Forms Integration"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="font-medium text-blue-900 mb-2">Setup Instructions</h4>
+                      <div className="text-sm text-blue-800 space-y-2">
+                        <p><strong>1.</strong> Click "Connect Google Forms" below</p>
+                        <p><strong>2.</strong> Your integration will be created</p>
+                        <p><strong>3.</strong> Update your Pipedream workflow with your webhook URL</p>
+                        <p><strong>4.</strong> Test with a Google Form submission</p>
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                          <p><strong>Note:</strong> Each coach needs their own webhook URL. Update the Pipedream workflow for each new coach.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4">
+                      <button
+                        onClick={() => setSelectedType(null)}
+                        className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        disabled={isConnecting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleGoogleFormsSetup}
+                        disabled={isConnecting}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            Connecting...
+                          </>
+                        ) : (
+                          <>
+                            <Globe className="w-4 h-4" />
+                            Connect Google Forms
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ) : selectedType === 'custom_webhook' ? (
                 /* Custom Webhook Setup */
                 <div>
@@ -437,7 +572,7 @@ function IntegrationSetupModal({ isOpen, onClose, onSave }: IntegrationSetupModa
                         type="text"
                         value={integrationName}
                         onChange={(e) => setIntegrationName(e.target.value)}
-                        placeholder="e.g., Contact Form Integration"
+                        placeholder="Custom Webhook"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>

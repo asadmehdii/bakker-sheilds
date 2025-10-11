@@ -20,47 +20,27 @@ serve(async (req) => {
   }
 
   try {
-    // Get integration ID from request
-    const url = new URL(req.url)
-    const integrationId = url.searchParams.get('integration_id')
+    const { integration_id, user_id } = await req.json()
 
-    if (!integrationId) {
+    if (!integration_id || !user_id) {
       return new Response(
-        JSON.stringify({ error: 'Missing integration_id parameter' }),
+        JSON.stringify({ error: 'Missing required parameters' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Get user from auth header
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
+    // Initialize Supabase
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
-
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
 
     // Get integration details
     const { data: integration, error: integrationError } = await supabase
       .from('user_integrations')
-      .select('config')
-      .eq('id', integrationId)
-      .eq('user_id', user.id)
+      .select('*')
+      .eq('id', integration_id)
+      .eq('user_id', user_id)
       .eq('type', 'ghl')
       .single()
 
@@ -109,10 +89,9 @@ serve(async (req) => {
     const forms = (formsData.forms || []).map((form: any) => ({
       id: form.id,
       name: form.name,
-      description: form.description || '',
-      created_at: form.dateAdded,
-      updated_at: form.dateUpdated,
-      is_active: form.status === 'active',
+      url: `https://app.leadconnectorhq.com/v2/location/${location_id}/form-builder-v2/${form.id}`,
+      submission_count: 0, // GHL doesn't provide submission count in this endpoint
+      last_submission: null
     }))
 
     return new Response(

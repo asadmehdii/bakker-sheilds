@@ -2,8 +2,55 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Settings, Trash2, ExternalLink, AlertCircle, CheckCircle, Clock, Zap, FileText, Globe } from 'lucide-react';
 import IntegrationSetupModal from '../components/IntegrationSetupModal';
 import IntegrationSettingsModal from '../components/IntegrationSettingsModal';
+import FormSelectionDropdown from '../components/FormSelectionDropdown';
 import Navigation from '../components/Navigation';
-import { userService } from '../lib/supabase';
+import { userService, supabase } from '../lib/supabase';
+
+// Debug: Check if userService functions exist
+console.log('🔍 [IntegrationsPage] userService:', userService);
+console.log('🔍 [IntegrationsPage] deleteIntegration exists:', typeof userService.deleteIntegration);
+console.log('🔍 [IntegrationsPage] updateIntegration exists:', typeof userService.updateIntegration);
+
+// Test: Try to add the functions manually
+if (!userService.deleteIntegration) {
+  console.log('🔧 [IntegrationsPage] Adding deleteIntegration manually');
+  userService.deleteIntegration = async (integrationId: string) => {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    const { error } = await supabase
+      .from('user_integrations')
+      .delete()
+      .eq('id', integrationId)
+      .eq('user_id', user.id);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  };
+}
+
+if (!userService.updateIntegration) {
+  console.log('🔧 [IntegrationsPage] Adding updateIntegration manually');
+  userService.updateIntegration = async (integrationId: string, updates: any) => {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    const { data: integration, error } = await supabase
+      .from('user_integrations')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', integrationId)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, integration };
+  };
+}
 
 interface Integration {
   id: string;
@@ -42,11 +89,13 @@ function IntegrationsPage() {
   useEffect(() => {
     const loadIntegrations = async () => {
       try {
+        console.log('🔄 [IntegrationsPage] Loading integrations...');
         setIsLoading(true);
         const userIntegrations = await userService.getUserIntegrations();
+        console.log('📋 [IntegrationsPage] Received integrations:', userIntegrations);
         setIntegrations(userIntegrations);
       } catch (error) {
-        console.error('Error loading integrations:', error);
+        console.error('❌ [IntegrationsPage] Error loading integrations:', error);
       } finally {
         setIsLoading(false);
       }
@@ -342,6 +391,17 @@ function IntegrationsPage() {
                     </div>
                     
                     <div className="flex items-center space-x-2">
+                      {/* Form Selection Dropdown - only show for connected integrations that need form selection */}
+                      {integration.status === 'connected' && integration.type !== 'custom_webhook' && integration.type !== 'google_forms' && (
+                        <FormSelectionDropdown
+                          integration={integration}
+                          onFormSelect={(form) => {
+                            console.log('Form selected:', form);
+                            // You can add additional logic here if needed
+                          }}
+                        />
+                      )}
+                      
                       {integration.type !== 'custom_webhook' && integration.config?.workflow_id && (
                         <button
                           onClick={() => window.open(`https://pipedream.com/workflows/${integration.config.workflow_id}`, '_blank')}
